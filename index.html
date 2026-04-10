@@ -187,34 +187,39 @@ select option { background: var(--surface2); }
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 12px 14px;
+  padding: 10px 10px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
+  overflow: hidden;
 }
 .emp-num {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--text3);
-  width: 22px;
+  width: 18px;
   text-align: right;
   flex-shrink: 0;
 }
 .emp-name {
   font-weight: 700;
-  font-size: 14px;
-  width: 70px;
+  font-size: 13px;
+  width: 56px;
   flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .emp-division {
   flex: 1;
+  min-width: 0;
 }
 .emp-division select {
   width: 100%;
-  font-size: 12px;
-  padding: 5px 8px;
+  font-size: 11px;
+  padding: 4px 4px;
 }
-.emp-actions { display: flex; gap: 4px; }
+.emp-actions { display: flex; gap: 4px; flex-shrink: 0; }
 
 .add-emp-form {
   display: flex;
@@ -991,12 +996,6 @@ select option { background: var(--surface2); }
     <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
       📂 JSON 불러오기 <input type="file" accept=".json" onchange="importData(event)" style="display:none;">
     </label>
-    <button class="btn btn-ghost btn-sm" onclick="loadDefaultEmployees()">🔄 기본 직원 로드</button>
-    <div style="width:1px;height:20px;background:var(--border);"></div>
-    <button class="btn btn-success btn-sm" onclick="migrateToSheet()" id="migrate-btn">
-      ☁️ 현재 데이터 → 구글 시트로 이전
-    </button>
-    <button class="btn btn-ghost btn-sm" onclick="forceSyncFromSheet()">⬇️ 구글 시트에서 불러오기</button>
   </div>
 </section>
 
@@ -1046,6 +1045,7 @@ select option { background: var(--surface2); }
       </div>
       <div id="wo-day-label" style="font-size:13px;color:var(--text2);"></div>
       <button class="btn btn-ghost btn-sm" onclick="copyWoFromYesterday()">↑ 전날 복사</button>
+      <button class="btn btn-ghost btn-sm" onclick="showCopyDatePicker('wo')" title="특정 날짜에서 복사">📋 날짜 복사</button>
       <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
         <span style="font-size:12px;color:var(--text3);">작업지시자:</span>
         <input type="text" id="wo-supervisor" value="권오근 부장"
@@ -1075,6 +1075,7 @@ select option { background: var(--surface2); }
     <div id="day-of-week" style="font-size:13px;color:var(--text2);"></div>
     <button class="btn btn-success btn-sm" onclick="saveDailyData()">✓ 저장</button>
     <button class="btn btn-ghost btn-sm" onclick="copyFromPrevDay()">↑ 전날 복사</button>
+    <button class="btn btn-ghost btn-sm" onclick="showCopyDatePicker('daily')" title="특정 날짜에서 복사">📋 날짜 복사</button>
   </div>
 
   <!-- 통계 바 -->
@@ -1163,6 +1164,19 @@ select option { background: var(--surface2); }
 </section>
 
 </main>
+
+<!-- 날짜 선택 복사 모달 -->
+<div id="copy-date-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9998;align-items:center;justify-content:center;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;min-width:300px;box-shadow:var(--shadow);">
+    <div style="font-size:14px;font-weight:700;margin-bottom:16px;color:var(--text);">📋 복사할 날짜 선택</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:8px;">어느 날짜의 데이터를 현재 날짜로 복사할까요?</div>
+    <input type="date" id="copy-date-input" style="width:100%;margin-bottom:16px;font-size:14px;">
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-ghost btn-sm" onclick="closeCopyDatePicker()">취소</button>
+      <button class="btn btn-primary btn-sm" onclick="executeCopyDate()">복사</button>
+    </div>
+  </div>
+</div>
 
 <!-- 토스트 -->
 <div id="toast" class="toast"></div>
@@ -1938,6 +1952,50 @@ function updateStats() {
   document.getElementById('s-공사').textContent = divCount.공사;
 }
 
+// ── 날짜 선택 복사 ──
+let _copyDateTarget = 'daily'; // 'daily' or 'wo'
+
+function showCopyDatePicker(target) {
+  _copyDateTarget = target;
+  // 데이터 있는 날짜 중 가장 최근 날짜를 기본값으로
+  const dates = Object.keys(state.dailyData).sort();
+  const modal = document.getElementById('copy-date-modal');
+  const input = document.getElementById('copy-date-input');
+  input.value = dates.length > 0 ? dates[dates.length - 1] : '';
+  modal.style.display = 'flex';
+}
+
+function closeCopyDatePicker() {
+  document.getElementById('copy-date-modal').style.display = 'none';
+}
+
+function executeCopyDate() {
+  const fromDate = document.getElementById('copy-date-input').value;
+  if (!fromDate) { showToast('날짜를 선택하세요.', 'error'); return; }
+  if (!state.dailyData[fromDate]) { showToast(fromDate + ' 데이터가 없습니다.', 'error'); return; }
+
+  const toDate = _copyDateTarget === 'daily' ? getDateStr() : getWoDateStr();
+  if (fromDate === toDate) { showToast('같은 날짜입니다.', 'error'); return; }
+
+  if (!confirm(fromDate + ' 데이터를 ' + toDate + '(으)로 복사하시겠습니까?')) return;
+
+  if (_copyDateTarget === 'daily') {
+    state.dailyData[toDate] = JSON.parse(JSON.stringify(state.dailyData[fromDate]));
+    saveState();
+    loadDailyData();
+    showToast(fromDate + ' → ' + toDate + ' 복사 완료', 'success');
+  } else {
+    const fromData = state.dailyData[fromDate] || {};
+    if (!state.dailyData[toDate]) state.dailyData[toDate] = { emp:{}, proj:{}, wo:{}, woMeta:{} };
+    if (fromData.wo) state.dailyData[toDate].wo = JSON.parse(JSON.stringify(fromData.wo));
+    if (fromData.woMeta) state.dailyData[toDate].woMeta = JSON.parse(JSON.stringify(fromData.woMeta));
+    saveState();
+    loadWoData();
+    showToast(fromDate + ' → ' + toDate + ' 복사 완료', 'success');
+  }
+  closeCopyDatePicker();
+}
+
 async function saveDailyData() {
   saveState(); // 1차 로컬 즉시 저장
   const btn = document.querySelector('button[onclick="saveDailyData()"]');
@@ -2481,6 +2539,10 @@ function renderWoProjBlock(container, proj, emps, woData, date) {
         '<option value="' + t + '"' + (wd.team===t?' selected':'') + '>' + (t||'-- 조 없음') + '</option>'
       ).join('');
 
+      const projOpts = state.projects.map(p =>
+        '<option value="' + p.id + '"' + (String(p.id)===String(proj.id)?' selected':'') + '>' + p.client + (p.code?' ('+p.code+')':'') + '</option>'
+      ).join('');
+
       card.innerHTML =
         '<div class="wo-card-top">' +
           '<span class="wo-emp-num">' + emp.id + '</span>' +
@@ -2494,6 +2556,14 @@ function renderWoProjBlock(container, proj, emps, woData, date) {
           '<label style="margin-left:6px;display:flex;align-items:center;gap:4px;font-size:11px;color:var(--red);cursor:pointer;">' +
             '<input type="checkbox" ' + (wd.excluded?'checked':'') + ' style="accent-color:var(--red);" onchange="setWoExclude(' + emp.id + ',this.checked)"> 제외' +
           '</label>' +
+        '</div>' +
+        // 프로젝트 변경 드롭다운
+        '<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px;">' +
+          '<label style="font-size:10px;color:var(--text3);white-space:nowrap;flex-shrink:0;">프로젝트</label>' +
+          '<select style="flex:1;font-size:11px;padding:3px 6px;color:var(--accent4);border-color:rgba(255,179,71,0.4);" onchange="setWoProjAndReload(' + emp.id + ',this.value)">' +
+            '<option value="">-- 미배정 --</option>' +
+            projOpts +
+          '</select>' +
         '</div>' +
         '<textarea class="wo-task-input" placeholder="작업 내용을 입력하세요..."' +
           ' onchange="setWo(' + emp.id + ',\'' + proj.id + '\',\'task\',this.value)">' + (wd.task||'') + '</textarea>' +
