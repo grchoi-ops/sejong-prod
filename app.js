@@ -3963,49 +3963,49 @@ function pr_printFromForm() {
  * @returns {string} HTML
  */
 function pr_buildPrintHTML(info, items) {
-  // ── M3 수정 사항 ──
-  // 1) 결재란 "월 일" 간격 확대 (10개 nbsp)
-  // 2) 결재란 9열 구조 (수신부서 빈 칸 삭제)
-  // 3) 꼬리말: no-print 제거, "(주)세종기술 ... 2026.04.13 (Rev.6)"
-
-  const DATE_CELL_CONTENT = '월&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;일';
+  // ── 결재란 HTML (발신부서: 담당자/부서장/승인권자 / 수신부서: 접수/검토/승인) ──
+  const DC = '월&nbsp;&nbsp;&nbsp;일';  // 날짜 셀 내용
 
   const signTableHTML =
     '<table class="sign-table">' +
-    '<thead>' +
+    '<tbody>' +
+    // 발신부서 헤더 행
     '<tr>' +
       '<th rowspan="3" class="sign-side-hd">발<br>신<br>부<br>서</th>' +
-      '<td class="role-hd">담당자</td>' +
-      '<td class="role-hd">부서장</td>' +
-      '<td class="role-hd">승인권자</td>' +
+      '<td class="role-hd">담 당 자</td>' +
+      '<td class="role-hd">부 서 장</td>' +
+      '<td class="role-hd">승 인 권 자</td>' +
       '<th rowspan="3" class="sign-divider"></th>' +
       '<th rowspan="3" class="sign-side-hd">수<br>신<br>부<br>서</th>' +
-      '<td class="role-hd">접수</td>' +
-      '<td class="role-hd">검토</td>' +
-      '<td class="role-hd">승인</td>' +
+      '<td class="role-hd">접 수</td>' +
+      '<td class="role-hd">검 토</td>' +
+      '<td class="role-hd">승 인</td>' +
     '</tr>' +
+    // 서명 칸
     '<tr>' +
-      '<td style="height:52px;"></td>' +
-      '<td></td>' +
-      '<td></td>' +
-      '<td style="height:52px;"></td>' +
-      '<td></td>' +
-      '<td></td>' +
+      '<td class="sign-box"></td>' +
+      '<td class="sign-box"></td>' +
+      '<td class="sign-box"></td>' +
+      '<td class="sign-box"></td>' +
+      '<td class="sign-box"></td>' +
+      '<td class="sign-box"></td>' +
     '</tr>' +
+    // 날짜 칸
     '<tr>' +
-      '<td class="date-cell">' + DATE_CELL_CONTENT + '</td>' +
-      '<td class="date-cell">' + DATE_CELL_CONTENT + '</td>' +
-      '<td class="date-cell">' + DATE_CELL_CONTENT + '</td>' +
-      '<td class="date-cell">' + DATE_CELL_CONTENT + '</td>' +
-      '<td class="date-cell">' + DATE_CELL_CONTENT + '</td>' +
-      '<td class="date-cell">' + DATE_CELL_CONTENT + '</td>' +
+      '<td class="date-cell">' + DC + '</td>' +
+      '<td class="date-cell">' + DC + '</td>' +
+      '<td class="date-cell">' + DC + '</td>' +
+      '<td class="date-cell">' + DC + '</td>' +
+      '<td class="date-cell">' + DC + '</td>' +
+      '<td class="date-cell">' + DC + '</td>' +
     '</tr>' +
-    '</thead>' +
+    '</tbody>' +
     '</table>';
 
+  // 품목 행
   const itemRowsHTML = items.map(item =>
     '<tr>' +
-    '<td style="text-align:center;">' + item.itemNo + '</td>' +
+    '<td style="text-align:center;">' + (item.itemNo || '') + '</td>' +
     '<td>' + (item.itemName || '') + '</td>' +
     '<td>' + (item.itemSpec || '') + '</td>' +
     '<td style="text-align:center;">' + (item.itemQty || '') + '</td>' +
@@ -4015,78 +4015,134 @@ function pr_buildPrintHTML(info, items) {
 
   // 빈 행 패딩 (최소 8행)
   const padCount = Math.max(0, 8 - items.length);
-  const padRowsHTML = Array(padCount).fill('<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td></tr>').join('');
+  const padRowsHTML = Array(padCount).fill(
+    '<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td></tr>'
+  ).join('');
 
   const css = [
     '* { margin:0; padding:0; box-sizing:border-box; }',
     "body { font-family:'맑은 고딕','Malgun Gothic','나눔고딕',sans-serif; color:#000; background:#fff; font-size:9pt; }",
-    '.wrap { padding:10mm 12mm; }',
-    /* 문서 헤더 */
-    '.doc-hdr { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }',
-    '.doc-title { font-size:20pt; font-weight:900; letter-spacing:8px; }',
-    '.doc-sub { font-size:8pt; color:#555; margin-top:4px; }',
-    '.doc-meta-right { text-align:right; font-size:8.5pt; line-height:1.7; }',
-    /* 결재란 */
-    '.sign-table { width:100%; border-collapse:collapse; margin-bottom:10px; }',
-    '.sign-table td, .sign-table th { border:1px solid #666; }',
-    '.sign-side-hd { background:#ddd; font-weight:900; font-size:8pt; width:16px; padding:4px 2px; text-align:center; letter-spacing:2px; writing-mode:vertical-rl; }',
-    '.sign-divider { width:8px; background:#fff; border:none !important; }',
-    '.role-hd { background:#e8e8e8; font-weight:700; font-size:8pt; text-align:center; padding:4px 6px; min-width:72px; }',
-    '.date-cell { font-size:7.5pt; color:#555; text-align:center; padding:4px 8px; min-width:72px; }',
-    /* 요청 정보 */
-    '.info-table { width:100%; border-collapse:collapse; margin-bottom:8px; font-size:8.5pt; }',
-    '.info-table th { background:#f0f0f0; font-weight:700; padding:5px 8px; border:1px solid #bbb; text-align:center; width:70px; }',
-    '.info-table td { padding:5px 8px; border:1px solid #bbb; }',
-    /* 품목 테이블 */
-    '.item-table { width:100%; border-collapse:collapse; font-size:8.5pt; }',
-    '.item-table th { background:#333; color:#fff; padding:6px 8px; text-align:center; border:1px solid #666; font-weight:700; }',
-    '.item-table td { padding:5px 8px; border:1px solid #bbb; }',
+    '.wrap { padding:10mm 14mm; }',
+
+    /* ── 문서 제목 행 ── */
+    '.doc-title-row { display:flex; justify-content:space-between; align-items:center; border-bottom:3px solid #000; padding-bottom:6px; margin-bottom:8px; }',
+    '.doc-title { font-size:22pt; font-weight:900; letter-spacing:10px; }',
+    '.doc-no-box { text-align:right; font-size:9pt; line-height:1.8; }',
+    '.doc-no-box strong { font-family:monospace; }',
+
+    /* ── 수신/발신 정보 ── */
+    '.addr-table { width:100%; border-collapse:collapse; margin-bottom:6px; font-size:8.5pt; }',
+    '.addr-table td { padding:3px 8px; border:1px solid #aaa; }',
+    '.addr-table .lbl { background:#f0f0f0; font-weight:700; width:48px; text-align:center; white-space:nowrap; }',
+
+    /* ── 프로젝트/자재 정보 ── */
+    '.meta-table { width:100%; border-collapse:collapse; margin-bottom:6px; font-size:8.5pt; }',
+    '.meta-table td { padding:4px 8px; border:1px solid #aaa; }',
+    '.meta-table .lbl { background:#f0f0f0; font-weight:700; text-align:center; white-space:nowrap; width:70px; }',
+
+    /* ── 사양/물량 섹션 ── */
+    '.section-title { font-weight:700; font-size:9pt; margin:8px 0 4px; }',
+    '.item-table { width:100%; border-collapse:collapse; font-size:8.5pt; margin-bottom:6px; }',
+    '.item-table th { background:#555; color:#fff; padding:5px 8px; text-align:center; border:1px solid #666; font-weight:700; }',
+    '.item-table td { padding:4px 8px; border:1px solid #bbb; vertical-align:middle; }',
     '.item-table tr:nth-child(even) td { background:#f8f8f8; }',
-    /* 꼬리말 (M3: no-print 제거 → 인쇄 포함) */
-    '.doc-footer { display:flex; justify-content:space-between; align-items:center; margin-top:10px; padding-top:6px; border-top:1px solid #bbb; font-size:7.5pt; color:#666; }',
+
+    /* ── 기타/첨부 ── */
+    '.etc-table { width:100%; border-collapse:collapse; margin-bottom:6px; font-size:8.5pt; }',
+    '.etc-table td { border:1px solid #aaa; padding:4px 8px; }',
+    '.etc-table .lbl { background:#f0f0f0; font-weight:700; width:56px; text-align:center; }',
+
+    /* ── 결재란 ── */
+    '.sign-table { width:100%; border-collapse:collapse; margin-top:10px; }',
+    '.sign-table td, .sign-table th { border:1px solid #666; }',
+    '.sign-side-hd { background:#ddd; font-weight:900; font-size:8pt; width:18px; padding:4px 2px; text-align:center; writing-mode:vertical-rl; white-space:nowrap; }',
+    '.sign-divider { width:10px; background:#fff; border-top:none !important; border-bottom:none !important; }',
+    '.role-hd { background:#e8e8e8; font-weight:700; font-size:8pt; text-align:center; padding:4px 6px; min-width:80px; }',
+    '.sign-box { height:56px; min-width:80px; }',
+    '.date-cell { font-size:7.5pt; color:#555; text-align:center; padding:4px 8px; min-width:80px; }',
+
+    /* ── 꼬리말 ── */
+    '.doc-footer { display:flex; justify-content:space-between; margin-top:8px; padding-top:5px; border-top:1px solid #bbb; font-size:7.5pt; color:#666; }',
+
     '@page { margin:8mm; size:A4 portrait; }',
     '@media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }'
   ].join('\n');
 
   return '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">' +
-    '<title>구매요청서 ' + info.claimNo + '</title>' +
+    '<title>구매요청서 ' + (info.claimNo || '') + '</title>' +
     '<style>' + css + '</style></head><body>' +
     '<div class="wrap">' +
 
-    '<div class="doc-hdr">' +
-      '<div>' +
-        '<div class="doc-title">구 매 요 청 서</div>' +
-      '</div>' +
-      '<div class="doc-meta-right">' +
-        '<div>청구번호: <strong>' + (info.claimNo || '—') + '</strong></div>' +
-        '<div>요청일자: <strong>' + info.reqDate + '</strong></div>' +
-        '<div>프로젝트: <strong>' + info.projName + (info.projCode ? ' (' + info.projCode + ')' : '') + '</strong></div>' +
+    // ── 제목 행 ──
+    '<div class="doc-title-row">' +
+      '<div class="doc-title">구 매 요 청 서</div>' +
+      '<div class="doc-no-box">' +
+        '<div>청구 번호 : <strong>' + (info.claimNo || '—') + '</strong></div>' +
+        '<div>일 &nbsp;&nbsp;&nbsp; 자 : <strong>' + (info.reqDate || '') + '</strong></div>' +
       '</div>' +
     '</div>' +
 
-    '<table class="info-table">' +
+    // ── 수신 / 발신 ──
+    '<table class="addr-table">' +
     '<tr>' +
-      '<th>투입 현장</th><td>' + info.site + '</td>' +
-      '<th>담당자</th><td>' + info.manager + (info.position ? ' (' + info.position + ')' : '') + '</td>' +
-      '<th>연락처</th><td>' + info.phone + '</td>' +
+      '<td class="lbl">수 신</td>' +
+      '<td></td>' +
+    '</tr>' +
+    '<tr>' +
+      '<td class="lbl">발 신</td>' +
+      '<td>생산부 &nbsp;&nbsp; 직위 : ' + (info.position || '') +
+        ' &nbsp;&nbsp; 성명 : ' + (info.manager || '') +
+        ' &nbsp;&nbsp; 전화 : ' + (info.phone || '') + '</td>' +
     '</tr>' +
     '</table>' +
 
+    // ── 프로젝트 / 자재명 / 투입현장 ──
+    '<table class="meta-table">' +
+    '<tr>' +
+      '<td class="lbl">프로젝트 명</td>' +
+      '<td>' + (info.projName || '') + '</td>' +
+      '<td class="lbl">프로젝트 번호</td>' +
+      '<td><strong style="font-family:monospace;">' + (info.projCode || '') + '</strong></td>' +
+    '</tr>' +
+    '<tr>' +
+      '<td class="lbl">자 재 명</td>' +
+      '<td></td>' +
+      '<td class="lbl">투입 현장</td>' +
+      '<td>' + (info.site || '') + '</td>' +
+    '</tr>' +
+    '<tr>' +
+      '<td class="lbl">예 &nbsp;&nbsp; 산</td><td></td>' +
+      '<td class="lbl">예 &nbsp;&nbsp; 가</td><td></td>' +
+    '</tr>' +
+    '<tr>' +
+      '<td class="lbl">견적마감일</td><td></td>' +
+      '<td class="lbl">현장소요일</td><td></td>' +
+    '</tr>' +
+    '</table>' +
+
+    // ── 사양 및 물량 ──
+    '<div class="section-title">1. 사양 및 물량</div>' +
     '<table class="item-table">' +
     '<thead><tr>' +
       '<th style="width:36px;">No.</th>' +
-      '<th>품목명</th>' +
-      '<th style="width:160px;">규격/사양</th>' +
-      '<th style="width:80px;">수량</th>' +
-      '<th style="width:140px;">비고</th>' +
+      '<th>품 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 목 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 명</th>' +
+      '<th style="width:200px;">사 &nbsp;&nbsp;&nbsp;&nbsp; 양</th>' +
+      '<th style="width:70px;">물 량</th>' +
+      '<th style="width:130px;">비 고</th>' +
     '</tr></thead>' +
     '<tbody>' + itemRowsHTML + padRowsHTML + '</tbody>' +
     '</table>' +
 
-    // [수정2] 결재란을 품목 테이블 아래로 이동
+    // ── 기타 / 첨부서류 ──
+    '<table class="etc-table">' +
+    '<tr><td class="lbl">2. 기 타</td><td style="height:28px;"></td></tr>' +
+    '<tr><td class="lbl">3. 첨부서류</td><td style="height:28px;"></td></tr>' +
+    '</table>' +
+
+    // ── 결재란 ──
     signTableHTML +
 
-    // M3 수정 꼬리말 (no-print 제거, 내용 변경)
+    // ── 꼬리말 ──
     '<div class="doc-footer">' +
       '<span>(주)세종기술 SEJONG TECHNOLOGY CO.LTD</span>' +
       '<span>2026.04.13 (Rev.6)</span>' +
@@ -4097,8 +4153,68 @@ function pr_buildPrintHTML(info, items) {
     '</body></html>';
 }
 
+
 /**
- * 구매 데이터 CSV 내보내기
+ * 구매 데이터 CSV 내보내기able>' +
+
+    // ── 프로젝트 / 자재명 / 투입현장 ──
+    '<table class="meta-table">' +
+    '<tr>' +
+      '<td class="lbl">프로젝트 명</td>' +
+      '<td>' + (info.projName || '') + '</td>' +
+      '<td class="lbl">프로젝트 번호</td>' +
+      '<td><strong style="font-family:monospace;">' + (info.projCode || '') + '</strong></td>' +
+    '</tr>' +
+    '<tr>' +
+      '<td class="lbl">자 재 명</td>' +
+      '<td></td>' +
+      '<td class="lbl">투입 현장</td>' +
+      '<td>' + (info.site || '') + '</td>' +
+    '</tr>' +
+    '<tr>' +
+      '<td class="lbl">예 &nbsp;&nbsp; 산</td><td></td>' +
+      '<td class="lbl">예 &nbsp;&nbsp; 가</td><td></td>' +
+    '</tr>' +
+    '<tr>' +
+      '<td class="lbl">견적마감일</td><td></td>' +
+      '<td class="lbl">현장소요일</td><td></td>' +
+    '</tr>' +
+    '</table>' +
+
+    // ── 사양 및 물량 ──
+    '<div class="section-title">1. 사양 및 물량</div>' +
+    '<table class="item-table">' +
+    '<thead><tr>' +
+      '<th style="width:36px;">No.</th>' +
+      '<th>품 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 목 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 명</th>' +
+      '<th style="width:200px;">사 &nbsp;&nbsp;&nbsp;&nbsp; 양</th>' +
+      '<th style="width:70px;">물 량</th>' +
+      '<th style="width:130px;">비 고</th>' +
+    '</tr></thead>' +
+    '<tbody>' + itemRowsHTML + padRowsHTML + '</tbody>' +
+    '</table>' +
+
+    // ── 기타 / 첨부서류 ──
+    '<table class="etc-table">' +
+    '<tr><td class="lbl">2. 기 타</td><td style="height:28px;"></td></tr>' +
+    '<tr><td class="lbl">3. 첨부서류</td><td style="height:28px;"></td></tr>' +
+    '</table>' +
+
+    // ── 결재란 ──
+    signTableHTML +
+
+    // ── 꼬리말 ──
+    '<div class="doc-footer">' +
+      '<span>(주)세종기술 SEJONG TECHNOLOGY CO.LTD</span>' +
+      '<span>2026.04.13 (Rev.6)</span>' +
+    '</div>' +
+
+    '</div>' +
+    '<script>window.onload=function(){window.print();}<\/script>' +
+    '</body></html>';
+}
+
+
  */
 function pr_exportCSV() {
   const db = state.purchaseDB || [];
