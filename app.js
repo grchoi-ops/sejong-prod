@@ -2749,6 +2749,7 @@ function printWorkOrder() {
       '<span>※ 작업 중 안전수칙을 반드시 준수하시기 바랍니다.</span>' +
     '</div>' +
     '</div>' +
+    signTableHTML +
     '<script>window.onload=function(){window.print();}<\/script>' +
     '</body></html>';
 
@@ -3979,9 +3980,9 @@ function pr_buildPrintHTML(info, items) {
       '<td class="role-hd">승인권자</td>' +
       '<th rowspan="3" class="sign-divider"></th>' +
       '<th rowspan="3" class="sign-side-hd">수<br>신<br>부<br>서</th>' +
-      '<td class="role-hd">담당자</td>' +
-      '<td class="role-hd">부서장</td>' +
-      '<td class="role-hd">전결권자</td>' +
+      '<td class="role-hd">접수</td>' +
+      '<td class="role-hd">검토</td>' +
+      '<td class="role-hd">승인</td>' +
     '</tr>' +
     '<tr>' +
       '<td style="height:52px;"></td>' +
@@ -4055,7 +4056,6 @@ function pr_buildPrintHTML(info, items) {
     '<div class="doc-hdr">' +
       '<div>' +
         '<div class="doc-title">구 매 요 청 서</div>' +
-        '<div class="doc-sub">구매요청 / SP-A01-01</div>' +
       '</div>' +
       '<div class="doc-meta-right">' +
         '<div>청구번호: <strong>' + (info.claimNo || '—') + '</strong></div>' +
@@ -4063,8 +4063,6 @@ function pr_buildPrintHTML(info, items) {
         '<div>프로젝트: <strong>' + info.projName + (info.projCode ? ' (' + info.projCode + ')' : '') + '</strong></div>' +
       '</div>' +
     '</div>' +
-
-    signTableHTML +
 
     '<table class="info-table">' +
     '<tr>' +
@@ -4084,6 +4082,9 @@ function pr_buildPrintHTML(info, items) {
     '</tr></thead>' +
     '<tbody>' + itemRowsHTML + padRowsHTML + '</tbody>' +
     '</table>' +
+
+    // [수정2] 결재란을 품목 테이블 아래로 이동
+    signTableHTML +
 
     // M3 수정 꼬리말 (no-print 제거, 내용 변경)
     '<div class="doc-footer">' +
