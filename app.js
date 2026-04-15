@@ -588,7 +588,7 @@ function renderProjects() {
         '<button class="btn btn-sm ' + (p.completed ? 'btn-success' : 'btn-ghost') + '" ' +
           'style="font-size:10px;padding:2px 7px;" ' +
           'onclick="toggleProjectCompleted(' + pId + ')" ' +
-          'title="' + (p.completed ? '완료됨 (' + (p.completedYear||\'\') + ') — 클릭하여 해제' : '클릭하여 완료 처리') + '">' +
+          'title="' + (p.completed ? '완료됨' : '클릭하여 완료 처리') + '">' +
           (p.completed ? '✅완료' : '진행중') +
         '</button>' +
       '</td>' +
@@ -1676,7 +1676,6 @@ function renderStats() {
         ? '<div class="stats-card"><div class="s-val" style="color:var(--accent2)">' + totalHalfDay + '회</div><div class="s-lbl">반차 (' + totalHalfDayH + 'h)</div></div>'
         : '') +
       '<div class="stats-card"><div class="s-val" style="color:#c490ff">' + Object.keys(tripSummary).length + '</div><div class="s-lbl">출장 현장 수</div></div>';
-  }
   }
 
   // ── 달력 렌더 ──
@@ -3803,7 +3802,7 @@ function pr_renderDB() {
     const actualIdx = state.purchaseDB.indexOf(row);
     const isFirstOfClaim = row.claim && !seenClaims.has(row.claim);
     if (row.claim) seenClaims.add(row.claim);
-    const safeClaimAttr = (row.claim || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const safeClaimAttr = encodeURIComponent(row.claim || '');
     return '<tr>' +
       '<td style=\"font-size:10px;color:var(--text3);white-space:nowrap;\">' + (row.ts || '') + '</td>' +
       '<td style=\"font-family:var(--mono);font-size:11px;color:var(--accent4);\">' + (row.claim || '') + '</td>' +
@@ -3816,12 +3815,11 @@ function pr_renderDB() {
       '<td style=\"color:var(--text2)\">' + (row.manager || '') + '</td>' +
       '<td style=\"color:var(--text3);font-size:11px;\">' + (row.itemNote || '') + '</td>' +
       '<td style=\"white-space:nowrap;\">' +
-        (isFirstOfClaim ? '<button class=\"btn btn-ghost btn-sm\" style=\"padding:2px 6px;font-size:11px;margin-right:4px;\" onclick=\"pr_viewEntry(\\'' + safeClaimAttr + '\\')\" title=\"해당 청구건 전체 재인쇄\">🖨️</button>' : '') +
+        (isFirstOfClaim ? '<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:11px;margin-right:4px;" onclick="pr_viewEntry(decodeURIComponent(this.dataset.claim))" data-claim="' + safeClaimAttr + '" title="해당 청구건 전체 재인쇄">🖨️</button>' : '') +
         '<button class=\"btn btn-ghost btn-sm\" style=\"color:var(--red);padding:2px 6px;font-size:10px;\" onclick=\"pr_deleteRow(' + actualIdx + ')\">삭제</button>' +
       '</td>' +
       '</tr>';
   }).join('');
-}
 }
 
 /**
