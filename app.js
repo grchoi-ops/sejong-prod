@@ -3974,12 +3974,12 @@ function pr_buildPrintHTML(info, items) {
     '<table class="sign-table">' +
     '<thead>' +
     '<tr>' +
-      '<th rowspan="3" class="sign-side-hd">발<br>신<br>부<br>서</th>' +
+      '<th rowspan="3" class="sign-side-hd">서<br>부<br>신<br>발</th>' +
       '<td class="role-hd">담당자</td>' +
       '<td class="role-hd">부서장</td>' +
       '<td class="role-hd">승인권자</td>' +
       '<th rowspan="3" class="sign-divider"></th>' +
-      '<th rowspan="3" class="sign-side-hd">수<br>신<br>부<br>서</th>' +
+      '<th rowspan="3" class="sign-side-hd">서<br>부<br>신<br>수</th>' +
       '<td class="role-hd">접수</td>' +
       '<td class="role-hd">검토</td>' +
       '<td class="role-hd">승인</td>' +
