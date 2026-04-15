@@ -4029,7 +4029,7 @@ function pr_buildPrintHTML(info, items) {
     /* 결재란 */
     '.sign-table { width:100%; border-collapse:collapse; margin-bottom:10px; }',
     '.sign-table td, .sign-table th { border:1px solid #666; }',
-    '.sign-side-hd { background:#ddd; font-weight:900; font-size:8pt; width:16px; padding:4px 2px; text-align:center; letter-spacing:2px; writing-mode:vertical-lr; }',
+    '.sign-side-hd { background:#ddd; font-weight:900; font-size:8pt; width:16px; padding:4px 2px; text-align:center; letter-spacing:2px; writing-mode:vertical-lr; text-orientation:upright; }',
     '.sign-divider { width:8px; background:#fff; border:none !important; }',
     '.role-hd { background:#e8e8e8; font-weight:700; font-size:8pt; text-align:center; padding:4px 6px; min-width:72px; }',
     '.date-cell { font-size:7.5pt; color:#555; text-align:center; padding:4px 8px; min-width:72px; }',
