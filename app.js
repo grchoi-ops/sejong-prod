@@ -2612,6 +2612,7 @@ function copyWoFromYesterday() {
 }
 
 function printWorkOrder() {
+  const signTableHTML = ''; // 워크오더 출력에는 결재란 없음
   const date = getWoDateStr();
   const d = new Date(date+'T00:00:00');
   const dow = DAYS_KO[d.getDay()];
