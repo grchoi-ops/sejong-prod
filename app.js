@@ -30,10 +30,13 @@ let state = {
   projects: [],
   dailyData: {},  // { 'YYYY-MM-DD': { emp: {...}, proj: {...} } }
   purchaseDB: [],
+  mdEntries: [],
   _lastSyncTime: null,
   _statsYear: new Date().getFullYear(),
   _statsMonth: new Date().getMonth() + 1
 };
+
+let currentUser = null;
 
 // ══════════════════════════════════════════
 //  초기화
@@ -41,8 +44,85 @@ let state = {
 //  초기화
 // ══════════════════════════════════════════
 async function init() {
-  // 로컬 먼저 표시 (빠른 초기 렌더)
   loadLocal();
+
+  // 세션 복원 시도
+  const saved = sessionStorage.getItem('md_session');
+  if (saved) {
+    try { currentUser = JSON.parse(saved); } catch {}
+  }
+
+  if (!currentUser) {
+    // 앱 숨기고 로그인 화면 표시
+    document.getElementById('md-login-overlay').style.display = 'flex';
+    md_renderLogin();
+    // 서버 데이터 로드 후 드롭다운 갱신
+    loadFromSheet().then(ok => { if (ok) md_renderLogin(); });
+    return;
+  }
+
+  await _finishInit();
+}
+
+function _showApp() {
+  document.querySelector('.app-header').style.display = '';
+  document.querySelector('.app-body').style.display = '';
+}
+
+function _updateHeaderUser() {
+  const badge = document.getElementById('app-user-badge');
+  if (badge && currentUser) {
+    const roleColor = currentUser.mdRole === '관리자' ? 'var(--accent)' : 'var(--accent2)';
+    badge.innerHTML =
+      `🧑 <strong>${md_esc(currentUser.name)}</strong>` +
+      `<span style="font-size:11px;color:${roleColor};margin-left:6px;">[${md_esc(currentUser.mdRole)}]</span>`;
+    badge.style.display = '';
+  }
+  const btn = document.getElementById('app-logout-btn');
+  if (btn) btn.style.display = '';
+}
+
+function _applyRoleUI() {
+  const role = currentUser?.mdRole || '일반';
+  const allRestrictedTabs = ['settings', 'wo', 'daily', 'report', 'purchase', 'dashboard', 'stats'];
+  const inspectorHiddenTabs = ['settings', 'wo', 'daily', 'purchase'];
+
+  if (role === '관리자') {
+    // 모든 탭 표시
+    [...inspectorHiddenTabs, 'dashboard', 'stats'].forEach(tab => {
+      const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+      if (btn) btn.style.display = '';
+    });
+  } else if (role === '검사관') {
+    // 생산관리 탭만 숨김, 대시보드·통계·M/D 유지
+    inspectorHiddenTabs.forEach(tab => {
+      const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+      if (btn) btn.style.display = 'none';
+    });
+    const activeBtn = document.querySelector('.tab-btn.active');
+    if (activeBtn && inspectorHiddenTabs.includes(activeBtn.dataset.tab)) {
+      switchToTab('dashboard');
+    }
+  } else {
+    // 일반: M/D 탭만 표시
+    allRestrictedTabs.forEach(tab => {
+      const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+      if (btn) btn.style.display = 'none';
+    });
+    switchToTab('manday');
+  }
+}
+
+async function _finishInit() {
+  _showApp();
+  document.getElementById('md-login-overlay').style.display = 'none';
+  _updateHeaderUser();
+  _applyRoleUI();
+
+  // 로그인 사용자 이름을 modifiedBy에 반영
+  localStorage.setItem('sejong_user_name', currentUser.name);
+  const userNameEl = document.getElementById('user-name');
+  if (userNameEl) userNameEl.value = currentUser.name;
 
   setupTabs();
 
@@ -53,28 +133,16 @@ async function init() {
   document.getElementById('wo-date').value = tomorrow.toISOString().slice(0,10);
   initReportMonth();
 
-  // [R2] 저장된 사용자 이름 복원
-  const savedName = localStorage.getItem('sejong_user_name') || '';
-  const userNameEl = document.getElementById('user-name');
-  if (userNameEl) userNameEl.value = savedName;
-
-  // [M1] 설정 섹션 접이식 상태 복원
   restoreSettingsSections();
 
   renderEmployees();
   renderProjects();
   loadDailyData();
-
   renderMonthDisplay();
   renderStats();
-
-  // [N1] 대시보드 초기 렌더
   renderDashboard();
-
-  // [N3] 알림 체크
   checkAlerts();
 
-  // 서버에서 최신 데이터 로드 (비동기 - 완료 후 UI 갱신)
   const fromSheet = await loadFromSheet();
   if (fromSheet) {
     renderEmployees();
@@ -105,6 +173,7 @@ function setupTabs() {
       if (tab === 'stats')     renderStats();
       if (tab === 'wo')        loadWoData();
       if (tab === 'purchase')  pr_init();
+      if (tab === 'manday')    md_initTab();
       checkAlerts();
     });
   });
@@ -157,7 +226,8 @@ function saveLocal() {
     employees:  state.employees,
     projects:   state.projects,
     dailyData:  state.dailyData,
-    purchaseDB: state.purchaseDB || []
+    purchaseDB: state.purchaseDB || [],
+    mdEntries:  state.mdEntries  || []
   }));
 }
 
@@ -170,6 +240,7 @@ function loadLocal() {
     state.projects   = d.projects   || [];
     state.dailyData  = d.dailyData  || {};
     state.purchaseDB = d.purchaseDB || [];
+    state.mdEntries  = d.mdEntries  || [];
     migrateStateFields();
     return true;
   }
@@ -185,7 +256,12 @@ function migrateStateFields() {
     if (e.longTermTrip === undefined) e.longTermTrip = false;
     if (e.position     === undefined) e.position     = '';
     if (e.phone        === undefined) e.phone        = '';
+    if (e.pin          === undefined) e.pin          = '0000';
+    if (e.pinChanged   === undefined) e.pinChanged   = false;
+    if (e.mdRole       === undefined) e.mdRole       = '관리자';
   });
+
+  if (!Array.isArray(state.mdEntries)) state.mdEntries = [];
 
   state.projects.forEach(p => {
     if (p.site        === undefined) p.site        = '';
@@ -299,7 +375,7 @@ async function loadFromSheet() {
       state.projects   = d.projects   || [];
       state.dailyData  = d.dailyData  || {};
       state.purchaseDB = d.purchaseDB || [];
-      // [R2] 마지막 동기화 시각 저장 (충돌 감지용)
+      state.mdEntries  = d.mdEntries  || [];
       state._lastSyncTime = d.lastModified || new Date().toISOString();
       migrateStateFields();
       saveLocal();
@@ -355,6 +431,7 @@ async function saveToSheet() {
         projects:     state.projects,
         dailyData:    state.dailyData,
         purchaseDB:   state.purchaseDB || [],
+        mdEntries:    state.mdEntries  || [],
         lastModified: new Date().toISOString(),
         modifiedBy:   localStorage.getItem('sejong_user_name') || '알 수 없음'
       })
@@ -472,8 +549,10 @@ function renderEmployees() {
     card.className = 'emp-card';
     card.innerHTML =
       '<span class="emp-num">' + emp.id + '</span>' +
-      '<span class="emp-name emp-name-clickable" onclick="showEmpDetail(' + emp.id + ')" title="클릭하면 상세 정보를 볼 수 있습니다">' + emp.name + '</span>' +
-      '<span class="div-badge ' + d.cls + '" style="flex-shrink:0;">' + d.label + '</span>' +
+      '<span style="display:flex;align-items:center;gap:3px;flex-shrink:0;">' +
+        '<span class="emp-name emp-name-clickable" style="width:auto;" onclick="showEmpDetail(' + emp.id + ')" title="클릭하면 상세 정보를 볼 수 있습니다">' + emp.name + '</span>' +
+        '<span class="div-badge ' + d.cls + '" style="font-size:10px;padding:1px 4px;">' + d.label + '</span>' +
+      '</span>' +
       '<div class="emp-division">' +
         '<select onchange="updateEmpDiv(' + emp.id + ', this.value)">' +
           Object.entries(DIVISIONS).map(([k,v]) =>
@@ -481,38 +560,35 @@ function renderEmployees() {
           ).join('') +
         '</select>' +
       '</div>' +
-      '<input type="text" value="' + (emp.home||'') + '" placeholder="출장지" style="width:80px;font-size:11px;" onchange="updateEmpHome(' + emp.id + ', this.value)">' +
-      // [단계15] 직급 필드
-      '<input type="text" value="' + (emp.position||'') + '" placeholder="직급" style="width:64px;font-size:11px;" onchange="updateEmpField(' + emp.id + ',\'position\',this.value)" title="직급 (구매요청서 자동입력)">' +
-      // [단계15] 전화번호 필드
-      '<input type="text" value="' + (emp.phone||'') + '" placeholder="전화번호" style="width:110px;font-size:11px;" onchange="updateEmpField(' + emp.id + ',\'phone\',this.value)" title="전화번호 (구매요청서 자동입력)">' +
-      // [단계15] 장기출장 체크박스
-      '<label style="font-size:11px;color:var(--accent4);display:flex;align-items:center;gap:3px;cursor:pointer;white-space:nowrap;" title="체크 시 일일 입력·집계에서 제외">' +
-        '<input type="checkbox"' + (emp.longTermTrip?' checked':'') + ' style="accent-color:var(--accent4);width:13px;height:13px;" onchange="updateEmpField(' + emp.id + ',\'longTermTrip\',this.checked)">' +
+      '<select style="font-size:11px;flex-shrink:0;" onchange="updateEmpField(' + emp.id + ',\'mdRole\',this.value)">' +
+        ['관리자','검사관','일반'].map(r =>
+          '<option value="' + r + '"' + (emp.mdRole === r ? ' selected' : '') + '>' + r + '</option>'
+        ).join('') +
+      '</select>' +
+      // 장기출장 체크박스
+      '<label style="font-size:10px;color:var(--accent4);display:flex;align-items:center;gap:2px;cursor:pointer;white-space:nowrap;flex-shrink:0;" title="체크 시 일일 입력·집계에서 제외">' +
+        '<input type="checkbox"' + (emp.longTermTrip?' checked':'') + ' style="accent-color:var(--accent4);width:12px;height:12px;" onchange="updateEmpField(' + emp.id + ',\'longTermTrip\',this.checked)">' +
         '✈장기출장' +
       '</label>' +
-      '<button class="btn btn-danger btn-sm" onclick="removeEmployee(' + emp.id + ')">✕</button>';
+      '<button class="btn btn-danger btn-sm" style="padding:2px 5px;font-size:10px;flex-shrink:0;" onclick="removeEmployee(' + emp.id + ')">✕</button>';
     grid.appendChild(card);
   });
 }
 
 function addEmployee() {
-  const name     = document.getElementById('new-emp-name').value.trim();
-  const div      = document.getElementById('new-emp-div').value;
-  const home     = document.getElementById('new-emp-home').value.trim();
-  const position = document.getElementById('new-emp-position')?.value.trim() || '';
-  const phone    = document.getElementById('new-emp-phone')?.value.trim()    || '';
+  const name   = document.getElementById('new-emp-name').value.trim();
+  const div    = document.getElementById('new-emp-div').value;
+  const mdRole = document.getElementById('new-emp-role')?.value || '일반';
   if (!name) { showToast('이름을 입력하세요.', 'error'); return; }
-  const maxId = state.employees.reduce((m,e) => Math.max(m,e.id), 0);
-  state.employees.push({ id: maxId+1, name, div, home, longTermTrip: false, position, phone });
+  const maxId = state.employees.reduce((m, e) => Math.max(m, e.id), 0);
+  state.employees.push({
+    id: maxId + 1, name, div, mdRole,
+    home: '', longTermTrip: false, position: '', phone: '',
+    pin: '0000', pinChanged: false
+  });
   saveState();
   renderEmployees();
   document.getElementById('new-emp-name').value = '';
-  document.getElementById('new-emp-home').value = '';
-  const posEl = document.getElementById('new-emp-position');
-  if (posEl) posEl.value = '';
-  const phEl = document.getElementById('new-emp-phone');
-  if (phEl) phEl.value = '';
   showToast(`${name} 추가 완료`, 'success');
 }
 
@@ -4158,3 +4234,554 @@ function pr_exportExcel() {
 //  시작
 // ══════════════════════════════════════════
 init();
+
+// ══════════════════════════════════════════
+//  M/D TRACKER 모듈
+// ══════════════════════════════════════════
+let md_parsedResults = [];
+
+function md_uid() {
+  return 'md_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+}
+function md_esc(s) {
+  return String(s || '').replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+  );
+}
+function md_showError(msg) {
+  const el = document.getElementById('md-login-error');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+
+// ── 탭 진입점 ──
+function md_initTab() {
+  md_enterApp();
+}
+
+// ── 로그인 화면 렌더 ──
+function md_renderLogin() {
+  const area = document.getElementById('md-login-form-area');
+  if (!area) return;
+  const emps = state.employees;
+  if (!emps.length) {
+    area.innerHTML = `
+      <div style="background:rgba(79,127,255,0.1);border:1px solid var(--accent);border-radius:8px;padding:12px;font-size:12px;color:var(--accent);margin-bottom:16px;text-align:center;line-height:1.8;">
+        👋 <b>직원이 없습니다.</b><br>② 설정 탭에서 직원을 먼저 등록해 주세요.
+      </div>
+      <button style="width:100%;padding:12px;font-size:14px;font-weight:600;background:var(--accent);color:white;border:none;border-radius:8px;cursor:pointer;"
+        onclick="document.getElementById('md-login-overlay').style.display='none'; switchToTab('settings');">설정 탭으로 이동</button>
+    `;
+    return;
+  }
+  if (!emps.length) {
+    area.innerHTML = `
+      <div style="background:rgba(79,127,255,0.1);border:1px solid var(--accent);border-radius:8px;padding:12px;font-size:12px;color:var(--accent);margin-bottom:16px;text-align:center;line-height:1.8;">
+        등록된 직원이 없습니다.<br>② 설정에서 직원을 먼저 등록해 주세요.
+      </div>
+    `;
+    return;
+  }
+  area.innerHTML = `
+    <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:4px;font-weight:500;">이름</label>
+    <input type="text" id="md-li-user" placeholder="이름을 입력하세요" autocomplete="off"
+      onkeydown="if(event.key==='Enter') document.getElementById('md-li-pin').focus()"
+      style="width:100%;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px;margin-bottom:14px;">
+    <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:4px;font-weight:500;">PIN (4자리)</label>
+    <input type="password" id="md-li-pin" maxlength="4" inputmode="numeric" placeholder="••••"
+      onkeydown="if(event.key==='Enter') md_doLogin()"
+      style="width:100%;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:20px;letter-spacing:8px;text-align:center;margin-bottom:20px;">
+    <button onclick="md_doLogin()"
+      style="width:100%;padding:12px;font-size:14px;font-weight:600;background:var(--accent);color:white;border:none;border-radius:8px;cursor:pointer;">
+      로그인
+    </button>
+    <div style="font-size:11px;color:var(--text3);text-align:center;margin-top:16px;line-height:1.7;padding-top:12px;border-top:1px solid var(--border);">
+      🔑 처음 로그인은 기본 PIN
+      <span style="background:var(--surface3);padding:1px 6px;border-radius:3px;color:var(--accent);">0000</span>
+      으로 입력 후 변경해 주세요.
+    </div>
+  `;
+  setTimeout(() => document.getElementById('md-li-pin')?.focus(), 100);
+}
+
+function md_doLogin() {
+  const nameEl = document.getElementById('md-li-user');
+  const pinEl  = document.getElementById('md-li-pin');
+  if (!nameEl || !pinEl) return;
+  const inputName = nameEl.value.trim();
+  const pin = pinEl.value.trim();
+  if (!inputName) { md_showError('이름을 입력하세요.'); return; }
+  const emp = state.employees.find(e => e.name === inputName);
+  if (!emp) { md_showError('등록된 이름이 아닙니다.'); return; }
+  const empPin = emp.pin || '0000';
+  if (empPin !== pin) {
+    md_showError('PIN이 올바르지 않습니다.');
+    pinEl.value = '';
+    return;
+  }
+  md_showError('');
+  if (!emp.pinChanged) {
+    md_renderPinChange(emp);
+    return;
+  }
+  md_setCurrentUser(emp);
+  _finishInit();
+}
+
+function md_renderPinChange(emp) {
+  const area = document.getElementById('md-login-form-area');
+  area.innerHTML = `
+    <div style="background:rgba(79,127,255,0.1);border:1px solid var(--accent);border-radius:8px;padding:12px;font-size:12px;color:var(--accent);margin-bottom:16px;text-align:center;line-height:1.8;">
+      🔑 <b>첫 로그인입니다, ${md_esc(emp.name)}님!</b><br>본인만 아는 PIN으로 변경해 주세요.
+    </div>
+    <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:4px;font-weight:500;">새 PIN (4자리)</label>
+    <input type="password" id="md-new-pin" maxlength="4" inputmode="numeric" placeholder="••••"
+      style="width:100%;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:20px;letter-spacing:8px;text-align:center;margin-bottom:10px;">
+    <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:4px;font-weight:500;">새 PIN 확인</label>
+    <input type="password" id="md-new-pin2" maxlength="4" inputmode="numeric" placeholder="••••"
+      onkeydown="if(event.key==='Enter') md_doChangePinFirst(${emp.id})"
+      style="width:100%;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:20px;letter-spacing:8px;text-align:center;margin-bottom:20px;">
+    <button onclick="md_doChangePinFirst(${emp.id})"
+      style="width:100%;padding:12px;font-size:14px;font-weight:600;background:var(--accent);color:white;border:none;border-radius:8px;cursor:pointer;">
+      PIN 변경 완료
+    </button>
+  `;
+  md_showError('');
+  setTimeout(() => document.getElementById('md-new-pin')?.focus(), 100);
+}
+
+async function md_doChangePinFirst(empId) {
+  const np  = document.getElementById('md-new-pin')?.value.trim();
+  const np2 = document.getElementById('md-new-pin2')?.value.trim();
+  if (!/^\d{4}$/.test(np))  { md_showError('PIN은 4자리 숫자로 입력하세요.'); return; }
+  if (np === '0000')         { md_showError('기본 PIN(0000)은 사용할 수 없습니다.'); return; }
+  if (np !== np2)            { md_showError('두 PIN이 일치하지 않습니다.'); document.getElementById('md-new-pin2').value = ''; return; }
+  const emp = state.employees.find(e => e.id === empId);
+  if (!emp) return;
+  emp.pin = np;
+  emp.pinChanged = true;
+  saveLocal();
+  await saveToSheet();
+  md_setCurrentUser(emp);
+  md_showError('');
+  showToast('PIN 변경 완료! 환영합니다, ' + emp.name + '님', 'success');
+  _finishInit();
+}
+
+function md_setCurrentUser(emp) {
+  currentUser = {
+    id: emp.id,
+    name: emp.name,
+    position: emp.position || '',
+    div: emp.div,
+    mdRole: emp.mdRole || '일반',
+    role: emp.mdRole === '관리자' ? 'admin' : 'user'
+  };
+  sessionStorage.setItem('md_session', JSON.stringify(currentUser));
+}
+
+function md_logout() {
+  currentUser = null;
+  sessionStorage.removeItem('md_session');
+  document.querySelector('.app-header').style.display = 'none';
+  document.querySelector('.app-body').style.display = 'none';
+  document.getElementById('app-user-badge').style.display = 'none';
+  document.getElementById('app-logout-btn').style.display = 'none';
+  document.getElementById('md-login-overlay').style.display = 'flex';
+  md_renderLogin();
+}
+
+async function md_changePin() {
+  if (!currentUser) return;
+  const emp = state.employees.find(e => e.id === currentUser.id);
+  if (!emp) return;
+  const curPin = prompt('현재 PIN을 입력하세요:');
+  if (curPin === null) return;
+  if (emp.pin !== curPin) { showToast('현재 PIN이 올바르지 않습니다.', 'error'); return; }
+  const newPin = prompt('새 PIN을 입력하세요 (4자리 숫자):');
+  if (!newPin) return;
+  if (!/^\d{4}$/.test(newPin)) { showToast('PIN은 4자리 숫자여야 합니다.', 'error'); return; }
+  if (newPin === '0000') { showToast('기본 PIN(0000)은 사용할 수 없습니다.', 'error'); return; }
+  emp.pin = newPin;
+  emp.pinChanged = true;
+  saveLocal();
+  showToast('PIN 변경 완료', 'success');
+  saveToSheet();
+}
+
+// ── 앱 진입 후 초기화 ──
+function md_enterApp() {
+  const badge = document.getElementById('md-user-badge');
+  if (badge) {
+    badge.innerHTML =
+      `🧑 <strong>${md_esc(currentUser.name)}</strong>` +
+      `<span style="font-size:11px;color:var(--text3);margin-left:6px;">${md_esc(currentUser.position || currentUser.div)}</span>` +
+      (currentUser.role === 'admin' ? '<span style="font-size:11px;color:var(--accent);margin-left:6px;">[관리자]</span>' : '');
+  }
+  const today = todayStr();
+  const mdFrom = document.getElementById('md-f-from');
+  const mdTo   = document.getElementById('md-f-to');
+  if (mdFrom && !mdFrom.value) mdFrom.value = today.slice(0, 7) + '-01';
+  if (mdTo   && !mdTo.value)   mdTo.value   = today;
+
+  // 관리자만 검사관 필터 노출
+  const inspCol = document.getElementById('md-f-insp-col');
+  if (inspCol) inspCol.style.display = currentUser.role === 'admin' ? '' : 'none';
+
+  md_refreshProjectFilter();
+  md_renderRecent();
+  md_renderSummary();
+}
+
+// ── 파서 ──
+function md_parseLine(line) {
+  const raw = line;
+  let date = todayStr();
+  const dateMatch = line.match(/^(\d{1,2})\/(\d{1,2})\s+/);
+  if (dateMatch) {
+    const mm = dateMatch[1].padStart(2, '0');
+    const dd = dateMatch[2].padStart(2, '0');
+    date = `${new Date().getFullYear()}-${mm}-${dd}`;
+    line = line.slice(dateMatch[0].length);
+  }
+  const parts = line.split(',').map(s => s.trim()).filter(Boolean);
+  if (parts.length < 2) return { error: '쉼표로 [프로젝트코드 명칭], [아이템 업무 시간] 구분 필요', raw };
+  const p1tokens = parts[0].split(/\s+/);
+  const projCode = p1tokens[0] || '';
+  const projName = p1tokens.slice(1).join(' ') || '';
+  const p2 = parts[1];
+  let regular = 0, ot = 0, remaining = p2;
+  const regRe = /정규\s*(\d+(?:\.\d+)?)\s*(?:시간|h|H)/g;
+  const otRe  = /(?:야근|잔업|OT|ot)\s*(\d+(?:\.\d+)?)\s*(?:시간|h|H)/g;
+  let m;
+  while ((m = regRe.exec(p2)) !== null) { regular += parseFloat(m[1]); remaining = remaining.replace(m[0], ''); }
+  while ((m = otRe.exec(p2))  !== null) { ot += parseFloat(m[1]);      remaining = remaining.replace(m[0], ''); }
+  if (regular === 0 && ot === 0) {
+    const solo = p2.match(/(\d+(?:\.\d+)?)\s*(?:시간|h|H)/);
+    if (solo) { regular = parseFloat(solo[1]); remaining = remaining.replace(solo[0], ''); }
+  }
+  const tokens = remaining.replace(/\s+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  const item = tokens[0] || '';
+  const work = tokens.slice(1).join(' ') || '';
+  if (regular + ot === 0) return { error: '시간 정보 없음 (예: 8시간, 정규8시간 야근2시간)', raw };
+  if (!projCode)           return { error: '프로젝트 코드가 비어있습니다.', raw };
+  const matched = state.projects.find(p => p.code === projCode);
+  const resolvedName = projName || (matched ? (matched.client || matched.title || '') : '');
+  return { date, projCode, projName: resolvedName, item, work, regular, ot, raw, matched: !!matched };
+}
+
+function md_parseKakao() {
+  const text = document.getElementById('md-input')?.value.trim();
+  if (!text) { showToast('입력이 비어있습니다.', 'error'); return; }
+  const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+  md_parsedResults = lines.map(md_parseLine);
+  md_renderPreview();
+}
+
+function md_renderPreview() {
+  const area = document.getElementById('md-preview');
+  if (!area) return;
+  if (!md_parsedResults.length) { area.innerHTML = ''; return; }
+  let validCount = 0;
+  let html = `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:12px;">
+    <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;">📝 파싱 결과 (${md_parsedResults.length}건)</div>`;
+  md_parsedResults.forEach((r, idx) => {
+    if (r.error) {
+      html += `<div style="background:rgba(255,71,87,0.1);border:1px solid var(--red);border-radius:6px;padding:10px;margin-bottom:6px;">
+        <span style="color:var(--red);font-weight:600;">❌ 줄${idx + 1}:</span> ${md_esc(r.error)}
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:3px;">${md_esc(r.raw)}</div>
+      </div>`;
+    } else {
+      validCount++;
+      const md = ((r.regular + r.ot) / 8).toFixed(2);
+      html += `<div style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:6px;">
+        <div style="display:grid;grid-template-columns:80px 1fr;gap:3px;font-size:12px;">
+          <span style="color:var(--text3);">날짜</span><span>${r.date}</span>
+          <span style="color:var(--text3);">프로젝트</span>
+          <span><strong style="color:var(--accent);">${md_esc(r.projCode)}</strong> ${md_esc(r.projName)}
+            ${r.matched ? '<span style="color:var(--green);font-size:11px;margin-left:4px;">✓ 자동매칭</span>' : '<span style="color:var(--yellow);font-size:11px;margin-left:4px;">⚠ 미등록</span>'}
+          </span>
+          <span style="color:var(--text3);">아이템/업무</span><span>${md_esc(r.item)} ${md_esc(r.work)}</span>
+          <span style="color:var(--text3);">시간/M/D</span>
+          <span>정규 ${r.regular}h${r.ot > 0 ? ` + 야근 ${r.ot}h` : ''} = <strong style="color:var(--accent4);">${md} M/D</strong></span>
+        </div>
+      </div>`;
+    }
+  });
+  html += `<div style="display:flex;gap:8px;margin-top:10px;">
+    <button onclick="md_confirmSave()"
+      ${validCount === 0 ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}
+      style="padding:8px 18px;background:var(--accent);color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">
+      ✓ ${validCount}건 저장
+    </button>
+    <button onclick="md_cancelParse()"
+      style="padding:8px 14px;background:var(--surface3);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">
+      취소
+    </button>
+  </div></div>`;
+  area.innerHTML = html;
+}
+
+function md_confirmSave() {
+  if (!currentUser) return;
+  const valid = md_parsedResults.filter(r => !r.error);
+  if (!valid.length) return;
+  valid.forEach(r => {
+    state.mdEntries.push({
+      id: md_uid(),
+      employeeId: currentUser.id,
+      employeeName: currentUser.name,
+      employeePosition: currentUser.position || '',
+      date: r.date,
+      projCode: r.projCode,
+      projName: r.projName,
+      item: r.item,
+      work: r.work,
+      regular: r.regular,
+      ot: r.ot,
+      createdAt: new Date().toISOString()
+    });
+  });
+  saveLocal();
+  showToast(`${valid.length}건 저장 완료`, 'success');
+  document.getElementById('md-input').value = '';
+  document.getElementById('md-preview').innerHTML = '';
+  md_parsedResults = [];
+  md_renderRecent();
+  md_renderSummary();
+  saveToSheet();
+}
+
+function md_cancelParse() {
+  document.getElementById('md-preview').innerHTML = '';
+  md_parsedResults = [];
+}
+
+// ── 최근 입력 렌더 ──
+function md_renderRecent() {
+  const list = document.getElementById('md-recent-list');
+  if (!list || !currentUser) return;
+  const isAdmin = currentUser.role === 'admin';
+  const base = isAdmin
+    ? state.mdEntries
+    : state.mdEntries.filter(e => e.employeeId === currentUser.id);
+  const entries = [...base].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20);
+  if (!entries.length) {
+    list.innerHTML = '<div style="text-align:center;color:var(--text3);padding:28px;">아직 입력된 기록이 없습니다.</div>';
+    return;
+  }
+  list.innerHTML = entries.map(e => {
+    const md = ((e.regular + e.ot) / 8).toFixed(2);
+    const canDel = isAdmin || e.employeeId === currentUser.id;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;margin-bottom:6px;gap:10px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:200px;font-size:12px;">
+        <strong style="color:var(--accent);">${e.date}</strong>
+        ${isAdmin ? `<span style="color:var(--text3);margin-left:8px;">${md_esc(e.employeeName)}</span>` : ''}
+        <span style="color:var(--text3);margin-left:8px;">${md_esc(e.projCode)} ${md_esc(e.projName)}</span>
+        <span style="color:var(--text3);margin-left:8px;">${md_esc(e.item)} ${md_esc(e.work)}</span>
+        <br>
+        <span>정규 ${e.regular}h${e.ot > 0 ? ` + 야근 ${e.ot}h` : ''} =
+          <strong style="color:var(--accent4);">${md} M/D</strong>
+        </span>
+      </div>
+      ${canDel
+        ? `<button onclick="md_deleteEntry('${e.id}')"
+            style="padding:4px 10px;background:transparent;color:var(--red);border:1px solid var(--red);border-radius:4px;cursor:pointer;font-size:11px;flex-shrink:0;">
+            삭제
+          </button>`
+        : ''}
+    </div>`;
+  }).join('');
+}
+
+// ── dailyData → 가상 M/D 엔트리 변환 ──
+function md_getDailyEntries() {
+  const entries = [];
+  Object.entries(state.dailyData).forEach(([date, dayData]) => {
+    const empData = dayData.emp || {};
+    Object.entries(empData).forEach(([empIdStr, ed]) => {
+      if (ed.status === '연차' || ed.status === '휴무') return;
+      const empId = parseInt(empIdStr);
+      let regular = 0;
+      if (ed.status === '출근') regular = 8;
+      else if (ed.status === '반차') regular = ed.halfDayHours || 4;
+      const ot = ed.overtimeHours || 0;
+      if (regular === 0 && ot === 0) return;
+      const proj = state.projects.find(p => p.id === ed.projId || p.id === parseInt(ed.projId));
+      const emp  = state.employees.find(e => e.id === empId);
+      entries.push({
+        id:         `daily_${date}_${empId}`,
+        employeeId: empId,
+        empName:    emp ? emp.name : String(empId),
+        date,
+        projCode:   proj ? proj.code  : (ed.projId ? '미배정' : '미배정'),
+        projName:   proj ? (proj.client || proj.title || '') : '',
+        item:       '',
+        work:       ed.work || '',
+        regular,
+        ot,
+        createdAt:  date,
+        source:     'daily'
+      });
+    });
+  });
+  return entries;
+}
+
+// ── M/D 집계 렌더 ──
+function md_renderSummary() {
+  const table = document.getElementById('md-summary-table');
+  if (!table || !currentUser) return;
+  const from      = document.getElementById('md-f-from')?.value || '';
+  const to        = document.getElementById('md-f-to')?.value   || '';
+  const projFilter = document.getElementById('md-f-proj')?.value || '';
+  const inspFilter = document.getElementById('md-f-insp')?.value || '';
+  const isAdmin = currentUser.role === 'admin';
+
+  // dailyData 우선: 같은 직원+날짜는 dailyData 항목만 사용
+  const dailyEntries  = md_getDailyEntries();
+  const dailyCovered  = new Set(dailyEntries.map(e => `${e.employeeId}_${e.date}`));
+  const mdOnly        = state.mdEntries.filter(e => !dailyCovered.has(`${e.employeeId}_${e.date}`));
+  const combined      = [...dailyEntries, ...mdOnly];
+
+  let data = isAdmin
+    ? combined
+    : combined.filter(e => e.employeeId === currentUser.id);
+  if (from)        data = data.filter(e => e.date >= from);
+  if (to)          data = data.filter(e => e.date <= to);
+  if (projFilter)  data = data.filter(e => e.projCode === projFilter);
+  if (inspFilter)  data = data.filter(e => String(e.employeeId) === inspFilter);
+  if (!data.length) {
+    table.innerHTML = '<div style="text-align:center;color:var(--text3);padding:24px;">조건에 맞는 데이터가 없습니다.</div>';
+    return;
+  }
+  const byProj = {};
+  data.forEach(e => {
+    if (!byProj[e.projCode]) {
+      byProj[e.projCode] = { code: e.projCode, name: e.projName, regular: 0, ot: 0, emps: new Set(), count: 0 };
+    }
+    byProj[e.projCode].regular += e.regular;
+    byProj[e.projCode].ot      += e.ot;
+    byProj[e.projCode].emps.add(e.employeeId);
+    byProj[e.projCode].count++;
+    if (!byProj[e.projCode].name && e.projName) byProj[e.projCode].name = e.projName;
+  });
+  const rows = Object.values(byProj).sort((a, b) => (b.regular + b.ot) - (a.regular + a.ot));
+  const totalH   = rows.reduce((s, r) => s + r.regular + r.ot, 0);
+  const totalReg = rows.reduce((s, r) => s + r.regular, 0);
+  const totalOt  = rows.reduce((s, r) => s + r.ot, 0);
+  const allEmps  = new Set(data.map(e => e.employeeId));
+  let html = `<div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead><tr style="background:var(--surface3);">
+        <th style="padding:9px 8px;text-align:left;border:1px solid var(--border);color:var(--text2);">프로젝트코드</th>
+        <th style="padding:9px 8px;text-align:left;border:1px solid var(--border);color:var(--text2);">명칭</th>
+        <th style="padding:9px 8px;text-align:right;border:1px solid var(--border);color:var(--text2);">정규</th>
+        <th style="padding:9px 8px;text-align:right;border:1px solid var(--border);color:var(--text2);">야근</th>
+        <th style="padding:9px 8px;text-align:right;border:1px solid var(--border);color:var(--text2);">M/D</th>
+        ${isAdmin ? '<th style="padding:9px 8px;text-align:right;border:1px solid var(--border);color:var(--text2);">인원</th>' : ''}
+        <th style="padding:9px 8px;text-align:right;border:1px solid var(--border);color:var(--text2);">건수</th>
+      </tr></thead>
+      <tbody>`;
+  rows.forEach(r => {
+    const md = ((r.regular + r.ot) / 8).toFixed(2);
+    html += `<tr>
+      <td style="padding:8px;border:1px solid var(--border);"><strong style="color:var(--accent);">${md_esc(r.code)}</strong></td>
+      <td style="padding:8px;border:1px solid var(--border);color:var(--text2);">${md_esc(r.name)}</td>
+      <td style="padding:8px;text-align:right;border:1px solid var(--border);">${r.regular.toFixed(1)}h</td>
+      <td style="padding:8px;text-align:right;border:1px solid var(--border);color:var(--accent4);">${r.ot > 0 ? r.ot.toFixed(1) + 'h' : '-'}</td>
+      <td style="padding:8px;text-align:right;border:1px solid var(--border);"><strong style="color:var(--accent4);font-size:14px;">${md}</strong></td>
+      ${isAdmin ? `<td style="padding:8px;text-align:right;border:1px solid var(--border);">${r.emps.size}명</td>` : ''}
+      <td style="padding:8px;text-align:right;border:1px solid var(--border);color:var(--text3);">${r.count}건</td>
+    </tr>`;
+  });
+  html += `<tr style="background:var(--surface3);font-weight:600;">
+    <td colspan="2" style="padding:8px;border:1px solid var(--border);">합계 (${rows.length}개 프로젝트)</td>
+    <td style="padding:8px;text-align:right;border:1px solid var(--border);">${totalReg.toFixed(1)}h</td>
+    <td style="padding:8px;text-align:right;border:1px solid var(--border);color:var(--accent4);">${totalOt > 0 ? totalOt.toFixed(1) + 'h' : '-'}</td>
+    <td style="padding:8px;text-align:right;border:1px solid var(--border);"><strong style="color:var(--accent4);font-size:14px;">${(totalH / 8).toFixed(2)}</strong></td>
+    ${isAdmin ? `<td style="padding:8px;text-align:right;border:1px solid var(--border);">${allEmps.size}명</td>` : ''}
+    <td style="padding:8px;text-align:right;border:1px solid var(--border);color:var(--text3);">${data.length}건</td>
+  </tr>
+  </tbody></table></div>`;
+  table.innerHTML = html;
+}
+
+function md_refreshProjectFilter() {
+  const sel = document.getElementById('md-f-proj');
+  if (!sel) return;
+  // dailyData + mdEntries에서 실제 사용된 projCode 수집
+  const usedCodes = new Set([
+    ...md_getDailyEntries().map(e => e.projCode),
+    ...state.mdEntries.map(e => e.projCode)
+  ]);
+  const projList = state.projects.filter(p => usedCodes.has(p.code));
+  sel.innerHTML = '<option value="">전체 프로젝트</option>' +
+    projList
+      .map(p => `<option value="${md_esc(p.code)}">${md_esc(p.code)} · ${md_esc(p.client || p.title || '')}</option>`)
+      .join('');
+  // 관리자 검사관 필터
+  const inspSel = document.getElementById('md-f-insp');
+  if (inspSel && currentUser?.role === 'admin') {
+    inspSel.innerHTML = '<option value="">전체 인원</option>' +
+      state.employees.map(e => `<option value="${e.id}">${md_esc(e.name)} ${md_esc(e.position || '')}</option>`).join('');
+  }
+}
+
+function md_quickFilter(type) {
+  const today = new Date();
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  if (type === 'today') {
+    const t = fmt(today);
+    document.getElementById('md-f-from').value = t;
+    document.getElementById('md-f-to').value   = t;
+  } else if (type === 'week') {
+    const day = today.getDay();
+    const mon = new Date(today); mon.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
+    const sun = new Date(mon);  sun.setDate(mon.getDate() + 6);
+    document.getElementById('md-f-from').value = fmt(mon);
+    document.getElementById('md-f-to').value   = fmt(sun);
+  } else if (type === 'month') {
+    document.getElementById('md-f-from').value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+    document.getElementById('md-f-to').value   = fmt(today);
+  }
+  md_renderSummary();
+}
+
+function md_deleteEntry(id) {
+  if (!currentUser) return;
+  const entry = state.mdEntries.find(e => e.id === id);
+  if (!entry) return;
+  if (currentUser.role !== 'admin' && entry.employeeId !== currentUser.id) {
+    showToast('삭제 권한이 없습니다.', 'error'); return;
+  }
+  if (!confirm('이 기록을 삭제하시겠습니까?')) return;
+  state.mdEntries = state.mdEntries.filter(e => e.id !== id);
+  saveLocal();
+  showToast('삭제 완료', 'success');
+  md_renderRecent();
+  md_renderSummary();
+  saveToSheet();
+}
+
+function md_exportCSV() {
+  if (!currentUser) return;
+  const isAdmin = currentUser.role === 'admin';
+  const data = isAdmin
+    ? state.mdEntries
+    : state.mdEntries.filter(e => e.employeeId === currentUser.id);
+  if (!data.length) { showToast('내보낼 데이터가 없습니다.', 'error'); return; }
+  const headers = ['날짜', '이름', '프로젝트코드', '프로젝트명', '아이템', '업무', '정규(h)', '야근(h)', 'M/D'];
+  const rows = data.map(e => [
+    e.date, e.employeeName, e.projCode, e.projName, e.item, e.work,
+    e.regular, e.ot, ((e.regular + e.ot) / 8).toFixed(2)
+  ]);
+  const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `manday_${todayStr()}.csv`; a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV 내보내기 완료', 'success');
+}
