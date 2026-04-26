@@ -173,7 +173,7 @@ select option { background: var(--surface2); }
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .emp-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
   gap: 10px;
 }
 .emp-card {
@@ -184,7 +184,6 @@ select option { background: var(--surface2); }
   display: flex;
   align-items: center;
   gap: 6px;
-  overflow: hidden;
 }
 .emp-num {
   font-family: var(--mono);
@@ -204,8 +203,8 @@ select option { background: var(--surface2); }
   white-space: nowrap;
 }
 .emp-division {
-  flex: 1;
-  min-width: 0;
+  flex-shrink: 0;
+  width: 75px;
 }
 .emp-division select {
   width: 100%;
