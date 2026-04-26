@@ -9,7 +9,7 @@
 <body>
 
 <!-- 헤더 -->
-<header class="app-header">
+<header class="app-header" style="display:none;">
   <div class="app-logo">㈜<span>SEJONG</span> TECHNOLOGY</div>
   <div class="app-title">생산부 작업관리 시스템</div>
   <div id="sync-status" onclick="manualSync()"
@@ -25,6 +25,9 @@
   </div>
   <!-- [N3] 알림 인라인 표시 영역 (헤더 내) -->
   <div id="alert-banner-inline" style="flex:1;min-width:0;display:flex;gap:6px;overflow:hidden;align-items:center;"></div>
+  <!-- 로그인 유저 배지 -->
+  <div id="app-user-badge" style="display:none;font-size:12px;color:var(--text2);padding:4px 12px;background:var(--surface3);border-radius:20px;border:1px solid var(--border);flex-shrink:0;white-space:nowrap;"></div>
+  <button id="app-logout-btn" onclick="md_logout()" style="display:none;font-size:12px;padding:4px 12px;border-radius:20px;background:transparent;color:var(--text3);border:1px solid var(--border);cursor:pointer;flex-shrink:0;">로그아웃</button>
   <nav class="tabs">
     <button class="tab-btn active" data-tab="dashboard">① 대시보드</button>
     <button class="tab-btn" data-tab="settings">② 설정</button>
@@ -33,13 +36,14 @@
     <button class="tab-btn" data-tab="report">⑤ 업무일지</button>
     <button class="tab-btn" data-tab="stats">⑥ 월간 통계</button>
     <button class="tab-btn" data-tab="purchase">⑦ 구매요청</button>
+    <button class="tab-btn" data-tab="manday">⑧ M/D</button>
   </nav>
 </header>
 
 <!-- [N3] 알림 배너 (헤더 바로 아래, 전체폭) -->
 <div id="alert-banner"></div>
 
-<main class="app-body">
+<main class="app-body" style="display:none;">
 
 <!-- ══════════════════════════════════════════
      탭①: 대시보드 (N1 신규)
@@ -73,10 +77,11 @@
           <option value="공사">공사부</option>
           <option value="관리">생산관리</option>
         </select>
-        <input id="new-emp-home" type="text" placeholder="기본 출장지(선택)" style="width:120px;">
-        <!-- [단계15] 직급·전화 신규 필드 -->
-        <input id="new-emp-position" type="text" placeholder="직급(선택)" style="width:80px;">
-        <input id="new-emp-phone" type="text" placeholder="전화번호(선택)" style="width:130px;">
+        <select id="new-emp-role">
+          <option value="관리자">관리자</option>
+          <option value="검사관">검사관</option>
+          <option value="일반">일반</option>
+        </select>
         <button class="btn btn-primary btn-sm" onclick="addEmployee()">+ 직원 추가</button>
       </div>
     </div>
@@ -525,6 +530,83 @@
   <div id="emp-detail-content"
     style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:0;min-width:360px;max-width:520px;width:90vw;max-height:82vh;overflow-y:auto;box-shadow:var(--shadow);"
     onclick="event.stopPropagation()">
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     탭⑧: M/D Tracker
+══════════════════════════════════════════ -->
+<section id="tab-manday" class="tab-panel">
+  <!-- 유저 바 -->
+  <div style="display:flex;align-items:center;gap:12px;padding:10px 0 14px;flex-wrap:wrap;">
+    <span id="md-user-badge" style="font-size:13px;color:var(--text);"></span>
+    <button class="btn btn-ghost btn-sm" onclick="md_changePin()">🔑 PIN 변경</button>
+    <button class="btn btn-ghost btn-sm" onclick="md_logout()">로그아웃</button>
+    <button class="btn btn-ghost btn-sm" style="margin-left:auto;" onclick="md_exportCSV()">📥 CSV</button>
+  </div>
+
+  <!-- 업무 입력 -->
+  <div class="card" style="margin-bottom:12px;">
+    <div class="card-title" style="margin-bottom:10px;">📱 업무 입력 (카톡처럼)</div>
+    <div style="background:var(--surface2);border-left:3px solid var(--accent);padding:10px 12px;border-radius:4px;font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.8;">
+      <b style="color:var(--text2);">형식:</b>
+      <span style="font-family:var(--mono);color:var(--accent);">[코드] [프로젝트명], [아이템] [업무] [시간]</span><br>
+      <b style="color:var(--text2);">예시 1:</b> <span style="font-family:var(--mono);">SJE435-26 삼성전기, V-103 외관검사 4시간</span><br>
+      <b style="color:var(--text2);">예시 2 (야근):</b> <span style="font-family:var(--mono);">SJE435-26 삼성전기, V-103 PWHT입회 정규8시간 야근2시간</span><br>
+      <b style="color:var(--text2);">예시 3 (날짜):</b> <span style="font-family:var(--mono);">4/24 SJE435-26 삼성전기, V-103 외관검사 8h</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:flex-start;">
+      <textarea id="md-input" rows="3"
+        placeholder="SJE435-26 삼성전기, V-103 외관검사 8시간"
+        style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:13px;padding:10px;resize:vertical;min-height:70px;"></textarea>
+      <button class="btn btn-primary" onclick="md_parseKakao()" style="flex-shrink:0;">미리보기</button>
+    </div>
+    <div id="md-preview"></div>
+  </div>
+
+  <!-- 필터 + 집계 -->
+  <div class="card" style="margin-bottom:12px;">
+    <div class="card-title" style="margin-bottom:10px;">📊 M/D 집계</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;">
+      <div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:3px;">시작일</div>
+        <input type="date" id="md-f-from" style="font-size:12px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;">
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:3px;">종료일</div>
+        <input type="date" id="md-f-to" style="font-size:12px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;">
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:3px;">프로젝트</div>
+        <select id="md-f-proj" style="font-size:12px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;"></select>
+      </div>
+      <div id="md-f-insp-col" style="display:none;">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:3px;">인원</div>
+        <select id="md-f-insp" style="font-size:12px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;"></select>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="md_renderSummary()">조회</button>
+      <button class="btn btn-ghost btn-sm" onclick="md_quickFilter('today')">오늘</button>
+      <button class="btn btn-ghost btn-sm" onclick="md_quickFilter('week')">이번주</button>
+      <button class="btn btn-ghost btn-sm" onclick="md_quickFilter('month')">이번달</button>
+    </div>
+    <div id="md-summary-table"></div>
+  </div>
+
+  <!-- 최근 입력 -->
+  <div class="card">
+    <div class="card-title" style="margin-bottom:10px;">📋 최근 입력 (최신 20건)</div>
+    <div id="md-recent-list"></div>
+  </div>
+</section>
+
+<!-- M/D 로그인 오버레이 -->
+<div id="md-login-overlay"
+  style="display:none;position:fixed;inset:0;background:rgba(15,17,23,0.96);align-items:center;justify-content:center;z-index:5000;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:40px 32px;width:360px;max-width:92vw;box-shadow:var(--shadow);">
+    <div style="font-size:20px;font-weight:700;color:var(--accent);text-align:center;margin-bottom:4px;">세종기술 작업관리 시스템</div>
+    <div style="font-size:12px;color:var(--text3);text-align:center;margin-bottom:24px;"></div>
+    <div id="md-login-form-area"></div>
+    <div id="md-login-error" style="color:var(--red);font-size:12px;margin-top:10px;display:none;"></div>
   </div>
 </div>
 
