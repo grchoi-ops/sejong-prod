@@ -306,8 +306,12 @@ function toArr(val) {
 }
 
 /* ── 초기화 ── */
+function ssGet(k)    { try { return sessionStorage.getItem(k); }    catch { return null; } }
+function ssSet(k, v) { try { sessionStorage.setItem(k, v); }         catch {} }
+function ssDel(k)    { try { sessionStorage.removeItem(k); }          catch {} }
+
 window.addEventListener('DOMContentLoaded', async () => {
-  const saved = sessionStorage.getItem('wk_session');
+  const saved = ssGet('wk_session');
   if (saved) {
     try { currentUser = JSON.parse(saved); } catch {}
   }
@@ -406,12 +410,12 @@ async function doChangePin() {
 /* ── 세션 ── */
 function setCurrentUser(emp) {
   currentUser = { id: emp.id, name: emp.name, position: emp.position || '', div: emp.div || '' };
-  sessionStorage.setItem('wk_session', JSON.stringify(currentUser));
+  ssSet('wk_session', JSON.stringify(currentUser));
 }
 
 function doLogout() {
   currentUser = null;
-  sessionStorage.removeItem('wk_session');
+  ssDel('wk_session');
   document.getElementById('li-name').value = '';
   document.getElementById('li-pin').value = '';
   document.getElementById('li-error').textContent = '';
@@ -730,9 +734,9 @@ async function saveRecord() {
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify(payload)
     });
-    if (!saveRes.ok) {
-      const errBody = await saveRes.json().catch(() => ({}));
-      throw new Error(saveRes.status + ' ' + (errBody.error || ''));
+    const saveBody = await saveRes.json().catch(() => ({}));
+    if (!saveRes.ok || !saveBody.success) {
+      throw new Error(saveBody.error || saveRes.status);
     }
 
     myEntries.unshift(entry);
@@ -741,7 +745,7 @@ async function saveRecord() {
     renderSummary();
     renderCalendar();
     renderList();
-    showToast('저장되었습니다.');
+    showToast('저장됨 · 서버 ' + (saveBody.savedCount ?? '?') + '개');
   } catch(e) {
     showToast('저장 실패: ' + e.message);
   }
