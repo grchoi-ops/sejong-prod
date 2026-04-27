@@ -5,33 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=2.0, user-scalable=yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="세종 공수">
-<meta name="theme-color" content="#1a1a2e">
+<meta name="theme-color" content="#f0f4f8">
 <title>세종기술 공수 기록</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 :root{
-  --bg:#0f0f1a;--surface:#1a1a2e;--surface2:#22223a;--surface3:#2a2a45;
-  --border:#333355;--text1:#e8e8f0;--text2:#b0b0c8;--text3:#7070a0;
-  --accent:#4f8ef7;--accent2:#3a70d0;--green:#3ecf8e;--red:#ff5c5c;
-  --orange:#ffb347;--purple:#a78bfa;--yellow:#fbbf24;
+  --bg:#f0f4f8;--surface:#ffffff;--surface2:#f0f4f8;--surface3:#e2e8f0;
+  --border:#c8d0dc;--text1:#1e293b;--text2:#475569;--text3:#64748b;
+  --accent:#2563eb;--accent2:#1d4ed8;--green:#059669;--red:#dc2626;
+  --orange:#d97706;--purple:#7c3aed;--yellow:#ca8a04;
   --radius:14px;--radius-sm:8px;
 }
 html,body{height:100%;background:var(--bg);color:var(--text1);font-family:'맑은 고딕','Malgun Gothic','Apple SD Gothic Neo',sans-serif;overflow:hidden;}
 
 /* ── 공통 ── */
-.btn{border:none;cursor:pointer;font-family:inherit;border-radius:var(--radius-sm);font-size:17px;font-weight:600;padding:15px 24px;transition:all .15s;}
+.btn{border:none;cursor:pointer;font-family:inherit;border-radius:var(--radius-sm);font-size:20px;font-weight:600;padding:15px 24px;transition:all .15s;}
 .btn-primary{background:var(--accent);color:#fff;}
 .btn-primary:active{background:var(--accent2);}
 .btn-ghost{background:var(--surface3);color:var(--text2);border:1px solid var(--border);}
 .btn-ghost:active{background:var(--surface2);}
-.btn-danger{background:rgba(255,92,92,.15);color:var(--red);border:1px solid rgba(255,92,92,.3);}
+.btn-danger{background:rgba(220,38,38,.12);color:var(--red);border:1px solid rgba(220,38,38,.25);}
 .btn-full{width:100%;display:block;}
-input,select,textarea{font-family:inherit;font-size:17px;background:var(--surface3);color:var(--text1);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;width:100%;outline:none;transition:border .15s;}
+input,select,textarea{font-family:inherit;font-size:19px;background:var(--surface3);color:var(--text1);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;width:100%;outline:none;transition:border .15s;}
 input:focus,select:focus,textarea:focus{border-color:var(--accent);}
 select option{background:var(--surface);}
-.toast{position:fixed;bottom:32px;left:50%;transform:translateX(-50%) translateY(60px);background:var(--surface2);color:var(--text1);padding:12px 24px;border-radius:50px;font-size:16px;z-index:9999;opacity:0;transition:all .3s;border:1px solid var(--border);white-space:nowrap;pointer-events:none;}
+.toast{position:fixed;bottom:32px;left:50%;transform:translateX(-50%) translateY(60px);background:var(--surface2);color:var(--text1);padding:12px 24px;border-radius:50px;font-size:19px;z-index:9999;opacity:0;transition:all .3s;border:1px solid var(--border);white-space:nowrap;pointer-events:none;}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
 /* ── 화면 레이어 ── */
@@ -41,81 +41,81 @@ select option{background:var(--surface);}
 /* ── 로그인 ── */
 #screen-login{background:var(--bg);justify-content:center;align-items:center;padding:32px 24px;}
 .login-logo{text-align:center;margin-bottom:40px;}
-.login-logo h1{font-size:26px;font-weight:900;letter-spacing:2px;color:var(--text1);}
-.login-logo p{font-size:15px;color:var(--text3);margin-top:6px;}
+.login-logo h1{font-size:30px;font-weight:900;letter-spacing:2px;color:var(--text1);}
+.login-logo p{font-size:17px;color:var(--text3);margin-top:6px;}
 .login-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:28px 24px;width:100%;max-width:360px;}
-.login-card label{font-size:15px;color:var(--text3);font-weight:700;letter-spacing:.5px;display:block;margin-bottom:6px;margin-top:18px;}
+.login-card label{font-size:17px;color:var(--text3);font-weight:700;letter-spacing:.5px;display:block;margin-bottom:6px;margin-top:18px;}
 .login-card label:first-of-type{margin-top:0;}
-.login-error{color:var(--red);font-size:15px;margin-top:12px;text-align:center;min-height:18px;}
-.login-hint{font-size:13px;color:var(--text3);text-align:center;margin-top:16px;}
+.login-error{color:var(--red);font-size:17px;margin-top:12px;text-align:center;min-height:18px;}
+.login-hint{font-size:15px;color:var(--text3);text-align:center;margin-top:16px;}
 
 /* ── PIN 변경 ── */
 #screen-pinchange{background:var(--bg);justify-content:center;align-items:center;padding:32px 24px;}
 .pinchange-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:28px 24px;width:100%;max-width:360px;}
-.pinchange-card h2{font-size:20px;font-weight:800;margin-bottom:6px;}
-.pinchange-card p{font-size:15px;color:var(--text3);margin-bottom:20px;}
-.pinchange-card label{font-size:15px;color:var(--text3);font-weight:700;letter-spacing:.5px;display:block;margin-bottom:6px;margin-top:16px;}
+.pinchange-card h2{font-size:23px;font-weight:800;margin-bottom:6px;}
+.pinchange-card p{font-size:17px;color:var(--text3);margin-bottom:20px;}
+.pinchange-card label{font-size:17px;color:var(--text3);font-weight:700;letter-spacing:.5px;display:block;margin-bottom:6px;margin-top:16px;}
 .pinchange-card label:first-of-type{margin-top:0;}
-.pinchange-error{color:var(--red);font-size:15px;margin-top:10px;min-height:16px;}
+.pinchange-error{color:var(--red);font-size:17px;margin-top:10px;min-height:16px;}
 
 /* ── 메인 ── */
 #screen-main{background:var(--bg);}
 .main-header{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
-.main-header-name{font-size:18px;font-weight:700;color:var(--text1);}
-.main-header-sub{font-size:14px;color:var(--text3);margin-top:2px;}
+.main-header-name{font-size:22px;font-weight:700;color:var(--text1);}
+.main-header-sub{font-size:16px;color:var(--text3);margin-top:2px;}
 .header-actions{display:flex;gap:8px;align-items:center;}
-.icon-btn{background:var(--surface3);border:1px solid var(--border);color:var(--text2);border-radius:50px;padding:9px 18px;font-size:15px;cursor:pointer;font-family:inherit;}
+.icon-btn{background:var(--surface3);border:1px solid var(--border);color:var(--text2);border-radius:50px;padding:9px 18px;font-size:17px;cursor:pointer;font-family:inherit;}
 .icon-btn:active{background:var(--surface2);}
 .main-body{flex:1;overflow-y:auto;padding:16px 16px 100px;}
-.section-title{font-size:14px;font-weight:700;color:var(--text3);letter-spacing:.8px;margin-bottom:10px;padding-left:2px;}
+.section-title{font-size:17px;font-weight:700;color:var(--text3);letter-spacing:.8px;margin-bottom:10px;padding-left:2px;}
 .summary-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px;}
 .summary-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 10px;text-align:center;}
-.summary-card .val{font-size:24px;font-weight:900;color:var(--accent);}
-.summary-card .lbl{font-size:13px;color:var(--text3);margin-top:3px;}
+.summary-card .val{font-size:30px;font-weight:900;color:var(--accent);}
+.summary-card .lbl{font-size:16px;color:var(--text3);margin-top:3px;}
 .record-list{display:flex;flex-direction:column;gap:8px;}
 
 /* ── 달력 ── */
 .cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
-.cal-nav-btn{background:var(--surface3);border:1px solid var(--border);color:var(--text2);border-radius:50%;width:44px;height:44px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.cal-nav-btn{background:var(--surface3);border:1px solid var(--border);color:var(--text2);border-radius:50%;width:44px;height:44px;font-size:24px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .cal-nav-btn:active{background:var(--surface2);}
-.cal-title{font-size:18px;font-weight:800;color:var(--text1);}
+.cal-title{font-size:22px;font-weight:800;color:var(--text1);}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
-.cal-dow{text-align:center;font-size:13px;font-weight:700;color:var(--text3);padding:4px 0;}
-.cal-dow:first-child{color:#ff6b6b;}
+.cal-dow{text-align:center;font-size:16px;font-weight:700;color:var(--text3);padding:4px 0;}
+.cal-dow:first-child{color:#dc2626;}
 .cal-dow:last-child{color:var(--accent);}
 .cal-cell{background:var(--surface);border:1px solid var(--border);border-radius:6px;min-height:60px;padding:5px 4px;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;transition:border .15s;}
 .cal-cell:active{background:var(--surface3);}
 .cal-cell.empty{background:transparent;border-color:transparent;cursor:default;}
-.cal-cell.today{border-color:var(--accent);background:rgba(79,142,247,.08);}
-.cal-cell.sun .cal-day{color:#ff6b6b;}
+.cal-cell.today{border-color:var(--accent);background:rgba(37,99,235,.08);}
+.cal-cell.sun .cal-day{color:#dc2626;}
 .cal-cell.sat .cal-day{color:var(--accent);}
-.cal-cell.holi .cal-day{color:#ff6b6b;}
-.cal-day{font-size:15px;font-weight:700;color:var(--text2);line-height:1;}
+.cal-cell.holi .cal-day{color:#dc2626;}
+.cal-day{font-size:18px;font-weight:700;color:var(--text2);line-height:1;}
 .cal-cell.today .cal-day{color:var(--accent);}
-.cal-holi-name{font-size:10px;color:#ff6b6b;line-height:1;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.cal-hours{font-size:11px;font-weight:700;border-radius:4px;padding:2px 4px;line-height:1;margin-top:1px;}
-.cal-dot-정규{background:rgba(79,142,247,.25);color:var(--accent);}
-.cal-dot-잔업{background:rgba(255,179,71,.25);color:var(--orange);}
-.cal-dot-특근{background:rgba(167,139,250,.25);color:var(--purple);}
-.cal-dot-연차{background:rgba(112,112,160,.2);color:var(--text3);}
-.cal-dot-복합{background:rgba(62,207,142,.2);color:var(--green);}
+.cal-holi-name{font-size:12px;color:#dc2626;line-height:1;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cal-hours{font-size:13px;font-weight:700;border-radius:4px;padding:2px 4px;line-height:1;margin-top:1px;}
+.cal-dot-정규{background:rgba(37,99,235,.18);color:var(--accent);}
+.cal-dot-잔업{background:rgba(217,119,6,.18);color:var(--orange);}
+.cal-dot-특근{background:rgba(124,58,237,.18);color:var(--purple);}
+.cal-dot-연차{background:rgba(100,116,139,.15);color:var(--text3);}
+.cal-dot-복합{background:rgba(5,150,105,.15);color:var(--green);}
 .record-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;display:flex;align-items:flex-start;gap:12px;}
-.record-type-badge{flex-shrink:0;padding:4px 11px;border-radius:50px;font-size:13px;font-weight:700;}
-.type-정규{background:rgba(79,142,247,.15);color:var(--accent);}
-.type-잔업{background:rgba(255,179,71,.15);color:var(--orange);}
-.type-특근{background:rgba(167,139,250,.15);color:var(--purple);}
-.type-반차{background:rgba(62,207,142,.15);color:var(--green);}
-.type-연차{background:rgba(112,112,160,.15);color:var(--text3);}
+.record-type-badge{flex-shrink:0;padding:5px 13px;border-radius:50px;font-size:16px;font-weight:700;}
+.type-정규{background:rgba(37,99,235,.12);color:var(--accent);}
+.type-잔업{background:rgba(217,119,6,.15);color:var(--orange);}
+.type-특근{background:rgba(124,58,237,.15);color:var(--purple);}
+.type-반차{background:rgba(5,150,105,.15);color:var(--green);}
+.type-연차{background:rgba(100,116,139,.15);color:var(--text3);}
 .record-info{flex:1;min-width:0;}
-.record-date{font-size:14px;color:var(--text3);}
-.record-desc{font-size:16px;font-weight:600;color:var(--text1);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.record-md{font-size:14px;color:var(--text3);margin-top:3px;}
-.record-del{flex-shrink:0;background:none;border:none;color:var(--text3);font-size:22px;cursor:pointer;padding:8px 10px;line-height:1;}
+.record-date{font-size:17px;color:var(--text3);}
+.record-desc{font-size:19px;font-weight:600;color:var(--text1);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.record-md{font-size:17px;color:var(--text3);margin-top:3px;}
+.record-del{flex-shrink:0;background:none;border:none;color:var(--text3);font-size:26px;cursor:pointer;padding:8px 10px;line-height:1;}
 .record-del:active{color:var(--red);}
-.empty-hint{text-align:center;padding:48px 24px;color:var(--text3);font-size:16px;}
+.empty-hint{text-align:center;padding:48px 24px;color:var(--text3);font-size:19px;}
 
 /* ── FAB ── */
-.fab{position:fixed;bottom:28px;right:24px;width:68px;height:68px;border-radius:50%;background:var(--accent);color:#fff;font-size:32px;border:none;cursor:pointer;box-shadow:0 4px 20px rgba(79,142,247,.5);display:flex;align-items:center;justify-content:center;line-height:1;transition:transform .15s;}
+.fab{position:fixed;bottom:28px;right:24px;width:68px;height:68px;border-radius:50%;background:var(--accent);color:#fff;font-size:32px;border:none;cursor:pointer;box-shadow:0 4px 20px rgba(37,99,235,.4);display:flex;align-items:center;justify-content:center;line-height:1;transition:transform .15s;}
 .fab:active{transform:scale(.92);}
 
 /* ── 폼 오버레이 ── */
@@ -125,21 +125,21 @@ select option{background:var(--surface);}
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
 .form-handle{width:40px;height:4px;background:var(--border);border-radius:4px;margin:12px auto 4px;}
 .form-header{padding:12px 20px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);}
-.form-header h2{font-size:19px;font-weight:800;}
-.form-close{background:none;border:none;color:var(--text3);font-size:22px;cursor:pointer;padding:6px 10px;line-height:1;}
+.form-header h2{font-size:22px;font-weight:800;}
+.form-close{background:none;border:none;color:var(--text3);font-size:26px;cursor:pointer;padding:6px 10px;line-height:1;}
 .form-body{padding:20px;}
 .field{margin-bottom:18px;}
-.field label{font-size:15px;color:var(--text3);font-weight:700;letter-spacing:.5px;display:block;margin-bottom:8px;}
+.field label{font-size:18px;color:var(--text3);font-weight:700;letter-spacing:.5px;display:block;margin-bottom:8px;}
 .type-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;}
-.type-btn{border:1px solid var(--border);background:var(--surface2);color:var(--text2);border-radius:var(--radius-sm);padding:14px 4px;font-size:15px;font-weight:700;cursor:pointer;text-align:center;line-height:1.3;font-family:inherit;transition:all .15s;}
-.type-btn.active-정규{background:rgba(79,142,247,.2);border-color:var(--accent);color:var(--accent);}
-.type-btn.active-잔업{background:rgba(255,179,71,.2);border-color:var(--orange);color:var(--orange);}
-.type-btn.active-특근{background:rgba(167,139,250,.2);border-color:var(--purple);color:var(--purple);}
-.type-btn.active-반차{background:rgba(62,207,142,.2);border-color:var(--green);color:var(--green);}
-.type-btn.active-연차{background:rgba(112,112,160,.2);border-color:var(--text3);color:var(--text3);}
+.type-btn{border:1px solid var(--border);background:var(--surface2);color:var(--text2);border-radius:var(--radius-sm);padding:14px 4px;font-size:17px;font-weight:700;cursor:pointer;text-align:center;line-height:1.3;font-family:inherit;transition:all .15s;}
+.type-btn.active-정규{background:rgba(37,99,235,.15);border-color:var(--accent);color:var(--accent);}
+.type-btn.active-잔업{background:rgba(217,119,6,.15);border-color:var(--orange);color:var(--orange);}
+.type-btn.active-특근{background:rgba(124,58,237,.15);border-color:var(--purple);color:var(--purple);}
+.type-btn.active-반차{background:rgba(5,150,105,.15);border-color:var(--green);color:var(--green);}
+.type-btn.active-연차{background:rgba(100,116,139,.15);border-color:var(--text3);color:var(--text3);}
 .md-preview{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center;}
-.md-preview .md-val{font-size:32px;font-weight:900;color:var(--accent);}
-.md-preview .md-lbl{font-size:14px;color:var(--text3);margin-top:4px;}
+.md-preview .md-val{font-size:36px;font-weight:900;color:var(--accent);}
+.md-preview .md-lbl{font-size:17px;color:var(--text3);margin-top:4px;}
 .form-footer{padding:0 20px 20px;}
 </style>
 </head>
@@ -181,7 +181,6 @@ select option{background:var(--surface);}
   <div class="main-header">
     <div>
       <div class="main-header-name" id="main-username"></div>
-      <div class="main-header-sub" id="main-usersub"></div>
     </div>
     <div class="header-actions">
       <button class="icon-btn" onclick="doLogout()">로그아웃</button>
@@ -233,40 +232,40 @@ select option{background:var(--surface);}
       <div class="field" id="field-regular-h" style="display:none;">
         <label>정규 근무 시간</label>
         <select id="f-regular-h" onchange="updateMdPreview()">
-          <option value="1">1h</option>
-          <option value="2">2h</option>
-          <option value="3">3h</option>
-          <option value="4">4h</option>
-          <option value="5">5h</option>
-          <option value="6">6h</option>
-          <option value="7">7h</option>
-          <option value="8" selected>8h</option>
+          <option value="1">1시간</option>
+          <option value="2">2시간</option>
+          <option value="3">3시간</option>
+          <option value="4">4시간</option>
+          <option value="5">5시간</option>
+          <option value="6">6시간</option>
+          <option value="7">7시간</option>
+          <option value="8" selected>8시간</option>
         </select>
       </div>
       <div class="field" id="field-special-h" style="display:none;">
         <label>특근 근무 시간</label>
         <select id="f-special-h" onchange="updateMdPreview()">
-          <option value="1">1h</option>
-          <option value="2">2h</option>
-          <option value="3">3h</option>
-          <option value="4">4h</option>
-          <option value="5">5h</option>
-          <option value="6">6h</option>
-          <option value="7">7h</option>
-          <option value="8" selected>8h</option>
+          <option value="1">1시간</option>
+          <option value="2">2시간</option>
+          <option value="3">3시간</option>
+          <option value="4">4시간</option>
+          <option value="5">5시간</option>
+          <option value="6">6시간</option>
+          <option value="7">7시간</option>
+          <option value="8" selected>8시간</option>
         </select>
       </div>
       <div class="field" id="field-ot" style="display:none;">
         <label>잔업 시간</label>
         <select id="f-ot" onchange="updateMdPreview()">
-          <option value="0.5">0.5h</option>
-          <option value="1">1h</option>
-          <option value="1.5">1.5h</option>
-          <option value="2" selected>2h</option>
-          <option value="2.5">2.5h</option>
-          <option value="3">3h</option>
-          <option value="3.5">3.5h</option>
-          <option value="4">4h</option>
+          <option value="0.5">0.5시간</option>
+          <option value="1">1시간</option>
+          <option value="1.5">1.5시간</option>
+          <option value="2" selected>2시간</option>
+          <option value="2.5">2.5시간</option>
+          <option value="3">3시간</option>
+          <option value="3.5">3.5시간</option>
+          <option value="4">4시간</option>
         </select>
       </div>
       <div class="field">
@@ -473,13 +472,17 @@ function renderCalendar() {
   const ym = calYear + '-' + String(calMonth).padStart(2,'0');
   document.getElementById('cal-title').textContent = calYear + '년 ' + calMonth + '월';
 
-  // 날짜별 집계 (정규+OT 합산)
+  // 날짜별 집계 (특근·잔업 1.5배 가중)
   const dayMap = {}; // 'YYYY-MM-DD' → { totalH, types: Set }
   myEntries.forEach(e => {
     if (!e.date.startsWith(ym)) return;
     if (!dayMap[e.date]) dayMap[e.date] = { totalH: 0, types: new Set() };
-    dayMap[e.date].totalH += (Number(e.regular) || 0) + (Number(e.ot) || 0);
-    (e.item || '').split('+').forEach(t => dayMap[e.date].types.add(t.trim()));
+    const entryTypes = (e.item || '').split('+');
+    const reg = Number(e.regular) || 0;
+    const ot  = Number(e.ot) || 0;
+    const isSpecial = entryTypes.includes('특근');
+    dayMap[e.date].totalH += (isSpecial ? reg * 1.5 : reg) + ot * 1.5;
+    entryTypes.forEach(t => dayMap[e.date].types.add(t.trim()));
   });
 
   const firstDay = new Date(calYear, calMonth - 1, 1).getDay(); // 0=일
@@ -506,7 +509,7 @@ function renderCalendar() {
                      : types.length > 1       ? 'cal-dot-복합'
                      : types.includes('잔업')  ? 'cal-dot-잔업'
                      : 'cal-dot-정규';
-      const hStr = info.totalH % 1 === 0 ? info.totalH + 'h' : info.totalH.toFixed(1) + 'h';
+      const hStr = info.totalH % 1 === 0 ? info.totalH + '시간' : info.totalH.toFixed(1) + '시간';
       dotHtml = `<span class="cal-hours ${dotClass}">${hStr}</span>`;
     }
 
@@ -567,19 +570,23 @@ function renderList() {
   list.innerHTML = myEntries.slice(0, 60).map(e => {
     const r = Number(e.regular) || 0;
     const o = Number(e.ot) || 0;
-    const md = ((r + o) / 8).toFixed(2).replace(/\.?0+$/, '');
-    const desc = e.projName || e.work || '';
-    const otStr = o > 0 ? ` + 잔업 ${o}h` : '';
-    // 복합 유형(예: 정규+잔업)은 첫 번째 유형으로 색상 결정
     const itemStr = e.item || '정규';
-    const badgeType = itemStr.split('+')[0];
+    const types = itemStr.split('+');
+    const isSpecial = types.includes('특근');
+    const weightedH = (isSpecial ? r * 1.5 : r) + o * 1.5;
+    const md = (weightedH / 8).toFixed(2).replace(/\.?0+$/, '');
+    const desc = e.projName || e.work || '';
+    const typeLabel = isSpecial ? '특근' : (r > 0 ? '정규' : '');
+    const rStr = r > 0 ? `${typeLabel} ${r}시간` : '';
+    const otStr = o > 0 ? (rStr ? ` + 잔업 ${o}시간` : `잔업 ${o}시간`) : '';
+    const badgeType = types[0];
     return `
       <div class="record-item" data-date="${e.date}">
         <span class="record-type-badge type-${badgeType}">${itemStr}</span>
         <div class="record-info">
           <div class="record-date">${formatDate(e.date)}</div>
           <div class="record-desc">${desc || '—'}</div>
-          <div class="record-md">${r}h${otStr} &nbsp;·&nbsp; 공수 ${md}</div>
+          <div class="record-md">${rStr}${otStr} &nbsp;·&nbsp; 공수 ${md}</div>
         </div>
         <button class="record-del" onclick="deleteRecord('${e.id}')" title="삭제">×</button>
       </div>`;
@@ -663,12 +670,15 @@ function updateMdPreview() {
   const lblEl = document.getElementById('md-preview-lbl');
   if (!selectedTypes.size) { valEl.textContent='—'; lblEl.textContent='유형을 선택하세요'; return; }
   const {r,o} = getHours();
-  const md = (r+o)/8;
+  const normalR  = selectedTypes.has('정규') ? r : 0;
+  const specialR = selectedTypes.has('특근') ? r : 0;
+  const md = (normalR + specialR * 1.5 + o * 1.5) / 8;
   valEl.textContent = md % 1 === 0 ? md.toFixed(1) : md.toFixed(2).replace(/0+$/,'');
   const parts = [];
-  if (r > 0) parts.push('정규 ' + r + 'h');
-  if (o > 0) parts.push('잔업 ' + o + 'h');
-  if (!r && !o) parts.push('—');
+  if (selectedTypes.has('정규') && r > 0) parts.push('정규 ' + r + '시간');
+  if (selectedTypes.has('특근') && r > 0) parts.push('특근 ' + r + '시간');
+  if (o > 0) parts.push('잔업 ' + o + '시간');
+  if (!normalR && !specialR && !o) parts.push('—');
   lblEl.textContent = parts.join(' + ');
 }
 
