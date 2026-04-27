@@ -85,16 +85,16 @@ function _updateHeaderUser() {
 function _applyRoleUI() {
   const role = currentUser?.mdRole || '일반';
   const allRestrictedTabs = ['settings', 'wo', 'daily', 'report', 'purchase', 'dashboard', 'stats'];
-  const inspectorHiddenTabs = ['settings', 'wo', 'daily', 'purchase'];
+  const inspectorHiddenTabs = ['settings', 'wo', 'report', 'purchase'];
 
   if (role === '관리자') {
     // 모든 탭 표시
-    [...inspectorHiddenTabs, 'dashboard', 'stats'].forEach(tab => {
+    allRestrictedTabs.forEach(tab => {
       const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
       if (btn) btn.style.display = '';
     });
   } else if (role === '검사관') {
-    // 생산관리 탭만 숨김, 대시보드·통계·M/D 유지
+    // 대시보드·일일입력·M/D만 표시
     inspectorHiddenTabs.forEach(tab => {
       const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
       if (btn) btn.style.display = 'none';
@@ -565,11 +565,12 @@ function renderEmployees() {
           '<option value="' + r + '"' + (emp.mdRole === r ? ' selected' : '') + '>' + r + '</option>'
         ).join('') +
       '</select>' +
-      // 장기출장 체크박스
+      // 장기출장 체크박스 + 고정 출장지
       '<label style="font-size:10px;color:var(--accent4);display:flex;align-items:center;gap:2px;cursor:pointer;white-space:nowrap;flex-shrink:0;" title="체크 시 일일 입력·집계에서 제외">' +
         '<input type="checkbox"' + (emp.longTermTrip?' checked':'') + ' style="accent-color:var(--accent4);width:12px;height:12px;" onchange="updateEmpField(' + emp.id + ',\'longTermTrip\',this.checked)">' +
         '✈장기출장' +
       '</label>' +
+      '<input type="text" placeholder="출장지" value="' + (emp.tripLocation||'') + '" style="font-size:10px;width:72px;padding:1px 4px;border:1px solid rgba(255,179,71,0.4);border-radius:4px;background:rgba(255,179,71,0.08);color:var(--accent4);flex-shrink:0;" onchange="updateEmpField(' + emp.id + ',\'tripLocation\',this.value)">' +
       '<button class="btn btn-danger btn-sm" style="padding:2px 5px;font-size:10px;flex-shrink:0;" onclick="removeEmployee(' + emp.id + ')">✕</button>';
     grid.appendChild(card);
   });
@@ -951,7 +952,7 @@ function renderEmpInputGrid(empData) {
         '<span style="color:var(--text3);">' + emp.id + '</span>' +
         '<span style="font-weight:700;color:var(--text2);">' + emp.name + '</span>' +
         '<span class="div-badge ' + d2.cls + '" style="font-size:10px;">' + d2.label + '</span>' +
-        '<span style="font-size:11px;color:var(--accent4);">✈ 장기출장 중 (집계 제외)</span>';
+        '<span style="font-size:11px;color:var(--accent4);">✈ 장기출장 중' + (emp.tripLocation ? ' · ' + emp.tripLocation : '') + ' (집계 제외)</span>';
       sectionDiv.appendChild(badge);
     });
     grid.appendChild(sectionDiv);
@@ -1366,7 +1367,7 @@ function buildReportHTML(date) {
   state.employees.forEach(emp => {
     const ed = empData[emp.id] || { status:'출근', overtimeHours:0, projId:'', onTrip:false, work:'' };
     if (ed.status === '휴무') {}
-    else if (ed.status === '연차') { presentCount++; }
+    else if (ed.status === '연차') {}
     else if (ed.status === '반차') { presentCount++; }
     else { presentCount++; }
     const otH = ed.overtimeHours || (ed.overtime ? 2.5 : 0);
@@ -1384,6 +1385,18 @@ function buildReportHTML(date) {
   });
 
   const empRows = state.employees.map(emp => {
+    // 장기출장자 별도 표시
+    if (emp.longTermTrip) {
+      const locLabel = (emp.tripLocation ? emp.tripLocation + ' ' : '') + '장기출장';
+      return '<tr style="background:#fff8ee;">' +
+        '<td class="rp-name-cell">' + emp.id + '. ' + emp.name + '</td>' +
+        '<td></td>' +
+        '<td></td>' +
+        '<td></td>' +
+        '<td style="text-align:center;">✈</td>' +
+        '<td style="text-align:left;padding-left:6px;font-size:10px;color:#c07000;font-weight:600;">' + locLabel + '</td>' +
+        '</tr>';
+    }
     const ed = empData[emp.id] || { status:'출근', overtimeHours:0, projId:'', onTrip:false, work:'' };
     const isAbsent = ed.status === '휴무';
     const otH = ed.overtimeHours || (ed.overtime ? 2.5 : 0);
@@ -1395,7 +1408,7 @@ function buildReportHTML(date) {
     const workLabel = workParts.join(' ');
     return '<tr>' +
       '<td class="rp-name-cell ' + (isAbsent?'rp-absent':'') + '">' + emp.id + '. ' + emp.name + (isAbsent?' (休)':'') + '</td>' +
-      '<td>' + (ed.status==='반차' ? ((ed.halfDayHours || 4) + 'h') : '') + '</td>' + // [M4] 반차 시간 표시
+      '<td>' + (ed.status==='반차' ? ((ed.halfDayHours || 4) + 'h') : '') + '</td>' +
       '<td>' + (ed.status==='연차'?'연차':'') + '</td>' +
       '<td>' + (otH > 0 ? otH+'h' : '') + '</td>' +
       '<td style="text-align:center;">' + (isOnTrip ? '✈' : '') + '</td>' +
