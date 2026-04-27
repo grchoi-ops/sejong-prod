@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=2.0, user-scalable=yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="세종 공수">
+<meta name="theme-color" content="#1a1a2e">
+<title>세종기술 공수 기록</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+:root{
+  --bg:#0f0f1a;--surface:#1a1a2e;--surface2:#22223a;--surface3:#2a2a45;
+  --border:#333355;--text1:#e8e8f0;--text2:#b0b0c8;--text3:#7070a0;
+  --accent:#4f8ef7;--accent2:#3a70d0;--green:#3ecf8e;--red:#ff5c5c;
+  --orange:#ffb347;--purple:#a78bfa;--yellow:#fbbf24;
+  --radius:14px;--radius-sm:8px;
+}
+html,body{height:100%;background:var(--bg);color:var(--text1);font-family:'맑은 고딕','Malgun Gothic','Apple SD Gothic Neo',sans-serif;overflow:hidden;}
+
+/* ── 공통 ── */
+.btn{border:none;cursor:pointer;font-family:inherit;border-radius:var(--radius-sm);font-size:17px;font-weight:600;padding:15px 24px;transition:all .15s;}
+.btn-primary{background:var(--accent);color:#fff;}
+.btn-primary:active{background:var(--accent2);}
+.btn-ghost{background:var(--surface3);color:var(--text2);border:1px solid var(--border);}
+.btn-ghost:active{background:var(--surface2);}
+.btn-danger{background:rgba(255,92,92,.15);color:var(--red);border:1px solid rgba(255,92,92,.3);}
+.btn-full{width:100%;display:block;}
+input,select,textarea{font-family:inherit;font-size:17px;background:var(--surface3);color:var(--text1);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;width:100%;outline:none;transition:border .15s;}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);}
+select option{background:var(--surface);}
+.toast{position:fixed;bottom:32px;left:50%;transform:translateX(-50%) translateY(60px);background:var(--surface2);color:var(--text1);padding:12px 24px;border-radius:50px;font-size:16px;z-index:9999;opacity:0;transition:all .3s;border:1px solid var(--border);white-space:nowrap;pointer-events:none;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* ── 화면 레이어 ── */
+.screen{position:fixed;inset:0;display:flex;flex-direction:column;transition:opacity .2s,transform .2s;overflow:hidden;}
+.screen.hidden{opacity:0;pointer-events:none;transform:translateY(16px);}
+
+/* ── 로그인 ── */
+#screen-login{background:var(--bg);justify-content:center;align-items:center;padding:32px 24px;}
+.login-logo{text-align:center;margin-bottom:40px;}
+.login-logo h1{font-size:26px;font-weight:900;letter-spacing:2px;color:var(--text1);}
+.login-logo p{font-size:15px;color:var(--text3);margin-top:6px;}
+.login-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:28px 24px;width:100%;max-width:360px;}
+.login-card label{font-size:15px;color:var(--text3);font-weight:700;letter-spacing:.5px;display:block;margin-bottom:6px;margin-top:18px;}
+.login-card label:first-of-type{margin-top:0;}
+.login-error{color:var(--red);font-size:15px;margin-top:12px;text-align:center;min-height:18px;}
+.login-hint{font-size:13px;color:var(--text3);text-align:center;margin-top:16px;}
+
+/* ── PIN 변경 ── */
+#screen-pinchange{background:var(--bg);justify-content:center;align-items:center;padding:32px 24px;}
+.pinchange-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:28px 24px;width:100%;max-width:360px;}
+.pinchange-card h2{font-size:20px;font-weight:800;margin-bottom:6px;}
+.pinchange-card p{font-size:15px;color:var(--text3);margin-bottom:20px;}
+.pinchange-card label{font-size:15px;color:var(--text3);font-weight:700;letter-spacing:.5px;display:block;margin-bottom:6px;margin-top:16px;}
+.pinchange-card label:first-of-type{margin-top:0;}
+.pinchange-error{color:var(--red);font-size:15px;margin-top:10px;min-height:16px;}
+
+/* ── 메인 ── */
+#screen-main{background:var(--bg);}
+.main-header{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.main-header-name{font-size:18px;font-weight:700;color:var(--text1);}
+.main-header-sub{font-size:14px;color:var(--text3);margin-top:2px;}
+.header-actions{display:flex;gap:8px;align-items:center;}
+.icon-btn{background:var(--surface3);border:1px solid var(--border);color:var(--text2);border-radius:50px;padding:9px 18px;font-size:15px;cursor:pointer;font-family:inherit;}
+.icon-btn:active{background:var(--surface2);}
+.main-body{flex:1;overflow-y:auto;padding:16px 16px 100px;}
+.section-title{font-size:14px;font-weight:700;color:var(--text3);letter-spacing:.8px;margin-bottom:10px;padding-left:2px;}
+.summary-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px;}
+.summary-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 10px;text-align:center;}
+.summary-card .val{font-size:24px;font-weight:900;color:var(--accent);}
+.summary-card .lbl{font-size:13px;color:var(--text3);margin-top:3px;}
+.record-list{display:flex;flex-direction:column;gap:8px;}
+
+/* ── 달력 ── */
+.cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.cal-nav-btn{background:var(--surface3);border:1px solid var(--border);color:var(--text2);border-radius:50%;width:44px;height:44px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.cal-nav-btn:active{background:var(--surface2);}
+.cal-title{font-size:18px;font-weight:800;color:var(--text1);}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
+.cal-dow{text-align:center;font-size:13px;font-weight:700;color:var(--text3);padding:4px 0;}
+.cal-dow:first-child{color:#ff6b6b;}
+.cal-dow:last-child{color:var(--accent);}
+.cal-cell{background:var(--surface);border:1px solid var(--border);border-radius:6px;min-height:60px;padding:5px 4px;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;transition:border .15s;}
+.cal-cell:active{background:var(--surface3);}
+.cal-cell.empty{background:transparent;border-color:transparent;cursor:default;}
+.cal-cell.today{border-color:var(--accent);background:rgba(79,142,247,.08);}
+.cal-cell.sun .cal-day{color:#ff6b6b;}
+.cal-cell.sat .cal-day{color:var(--accent);}
+.cal-cell.holi .cal-day{color:#ff6b6b;}
+.cal-day{font-size:15px;font-weight:700;color:var(--text2);line-height:1;}
+.cal-cell.today .cal-day{color:var(--accent);}
+.cal-holi-name{font-size:10px;color:#ff6b6b;line-height:1;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cal-hours{font-size:11px;font-weight:700;border-radius:4px;padding:2px 4px;line-height:1;margin-top:1px;}
+.cal-dot-정규{background:rgba(79,142,247,.25);color:var(--accent);}
+.cal-dot-잔업{background:rgba(255,179,71,.25);color:var(--orange);}
+.cal-dot-특근{background:rgba(167,139,250,.25);color:var(--purple);}
+.cal-dot-연차{background:rgba(112,112,160,.2);color:var(--text3);}
+.cal-dot-복합{background:rgba(62,207,142,.2);color:var(--green);}
+.record-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;display:flex;align-items:flex-start;gap:12px;}
+.record-type-badge{flex-shrink:0;padding:4px 11px;border-radius:50px;font-size:13px;font-weight:700;}
+.type-정규{background:rgba(79,142,247,.15);color:var(--accent);}
+.type-잔업{background:rgba(255,179,71,.15);color:var(--orange);}
+.type-특근{background:rgba(167,139,250,.15);color:var(--purple);}
+.type-반차{background:rgba(62,207,142,.15);color:var(--green);}
+.type-연차{background:rgba(112,112,160,.15);color:var(--text3);}
+.record-info{flex:1;min-width:0;}
+.record-date{font-size:14px;color:var(--text3);}
+.record-desc{font-size:16px;font-weight:600;color:var(--text1);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.record-md{font-size:14px;color:var(--text3);margin-top:3px;}
+.record-del{flex-shrink:0;background:none;border:none;color:var(--text3);font-size:22px;cursor:pointer;padding:8px 10px;line-height:1;}
+.record-del:active{color:var(--red);}
+.empty-hint{text-align:center;padding:48px 24px;color:var(--text3);font-size:16px;}
+
+/* ── FAB ── */
+.fab{position:fixed;bottom:28px;right:24px;width:68px;height:68px;border-radius:50%;background:var(--accent);color:#fff;font-size:32px;border:none;cursor:pointer;box-shadow:0 4px 20px rgba(79,142,247,.5);display:flex;align-items:center;justify-content:center;line-height:1;transition:transform .15s;}
+.fab:active{transform:scale(.92);}
+
+/* ── 폼 오버레이 ── */
+#screen-form{background:rgba(0,0,0,.7);backdrop-filter:blur(4px);justify-content:flex-end;}
+#screen-form.hidden{transform:translateY(0);}
+.form-sheet{background:var(--surface);border-radius:var(--radius) var(--radius) 0 0;padding:0 0 env(safe-area-inset-bottom,20px);max-height:92vh;overflow-y:auto;animation:slideUp .25s ease;}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.form-handle{width:40px;height:4px;background:var(--border);border-radius:4px;margin:12px auto 4px;}
+.form-header{padding:12px 20px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);}
+.form-header h2{font-size:19px;font-weight:800;}
+.form-close{background:none;border:none;color:var(--text3);font-size:22px;cursor:pointer;padding:6px 10px;line-height:1;}
+.form-body{padding:20px;}
+.field{margin-bottom:18px;}
+.field label{font-size:15px;color:var(--text3);font-weight:700;letter-spacing:.5px;display:block;margin-bottom:8px;}
+.type-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;}
+.type-btn{border:1px solid var(--border);background:var(--surface2);color:var(--text2);border-radius:var(--radius-sm);padding:14px 4px;font-size:15px;font-weight:700;cursor:pointer;text-align:center;line-height:1.3;font-family:inherit;transition:all .15s;}
+.type-btn.active-정규{background:rgba(79,142,247,.2);border-color:var(--accent);color:var(--accent);}
+.type-btn.active-잔업{background:rgba(255,179,71,.2);border-color:var(--orange);color:var(--orange);}
+.type-btn.active-특근{background:rgba(167,139,250,.2);border-color:var(--purple);color:var(--purple);}
+.type-btn.active-반차{background:rgba(62,207,142,.2);border-color:var(--green);color:var(--green);}
+.type-btn.active-연차{background:rgba(112,112,160,.2);border-color:var(--text3);color:var(--text3);}
+.md-preview{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center;}
+.md-preview .md-val{font-size:32px;font-weight:900;color:var(--accent);}
+.md-preview .md-lbl{font-size:14px;color:var(--text3);margin-top:4px;}
+.form-footer{padding:0 20px 20px;}
+</style>
+</head>
+<body>
+
+<!-- 로그인 -->
+<div class="screen" id="screen-login">
+  <div class="login-logo">
+    <h1>㈜세종기술</h1>
+    <p>공수 기록 앱</p>
+  </div>
+  <div class="login-card">
+    <label>이름</label>
+    <input type="text" id="li-name" placeholder="이름을 입력하세요" autocomplete="off">
+    <label>PIN</label>
+    <input type="password" id="li-pin" placeholder="4자리 숫자" maxlength="4" inputmode="numeric">
+    <div class="login-error" id="li-error"></div>
+    <button class="btn btn-primary btn-full" style="margin-top:20px;" onclick="doLogin()">로그인</button>
+    <p class="login-hint">최초 로그인 PIN: 0000</p>
+  </div>
+</div>
+
+<!-- PIN 변경 -->
+<div class="screen hidden" id="screen-pinchange">
+  <div class="pinchange-card">
+    <h2>PIN 변경</h2>
+    <p>처음 로그인하셨습니다. 새 PIN을 설정해 주세요.</p>
+    <label>새 PIN (4자리 숫자)</label>
+    <input type="password" id="pc-pin1" placeholder="새 PIN" maxlength="4" inputmode="numeric">
+    <label>PIN 확인</label>
+    <input type="password" id="pc-pin2" placeholder="PIN 재입력" maxlength="4" inputmode="numeric">
+    <div class="pinchange-error" id="pc-error"></div>
+    <button class="btn btn-primary btn-full" style="margin-top:20px;" onclick="doChangePin()">PIN 설정 완료</button>
+  </div>
+</div>
+
+<!-- 메인 -->
+<div class="screen hidden" id="screen-main">
+  <div class="main-header">
+    <div>
+      <div class="main-header-name" id="main-username"></div>
+      <div class="main-header-sub" id="main-usersub"></div>
+    </div>
+    <div class="header-actions">
+      <button class="icon-btn" onclick="doLogout()">로그아웃</button>
+    </div>
+  </div>
+  <div class="main-body">
+    <div class="section-title">이번 달 요약</div>
+    <div class="summary-row">
+      <div class="summary-card"><div class="val" id="sum-days">0</div><div class="lbl">출근일</div></div>
+      <div class="summary-card"><div class="val" id="sum-ot">0</div><div class="lbl">잔업(h)</div></div>
+      <div class="summary-card"><div class="val" id="sum-special">0</div><div class="lbl">특근(일)</div></div>
+      <div class="summary-card"><div class="val" id="sum-leave">0</div><div class="lbl">연차(일)</div></div>
+    </div>
+    <div class="cal-nav">
+      <button class="cal-nav-btn" onclick="moveMonth(-1)">‹</button>
+      <div class="cal-title" id="cal-title"></div>
+      <button class="cal-nav-btn" onclick="moveMonth(1)">›</button>
+    </div>
+    <div class="cal-grid" id="cal-grid"></div>
+    <div style="height:18px;"></div>
+    <div class="section-title">최근 기록</div>
+    <div class="record-list" id="record-list"></div>
+  </div>
+  <button class="fab" onclick="openForm()">+</button>
+</div>
+
+<!-- 기록 추가 폼 -->
+<div class="screen hidden" id="screen-form" onclick="closeFormOutside(event)">
+  <div class="form-sheet" id="form-sheet">
+    <div class="form-handle"></div>
+    <div class="form-header">
+      <h2>기록 추가</h2>
+      <button class="form-close" onclick="closeForm()">✕</button>
+    </div>
+    <div class="form-body">
+      <div class="field">
+        <label>날짜</label>
+        <input type="date" id="f-date">
+      </div>
+      <div class="field">
+        <label>작업 유형</label>
+        <div class="type-grid" style="grid-template-columns:repeat(4,1fr);">
+          <button class="type-btn" data-type="정규" onclick="selectType(this)">정규<br>출근</button>
+          <button class="type-btn" data-type="잔업" onclick="selectType(this)">잔업<br>OT</button>
+          <button class="type-btn" data-type="특근" onclick="selectType(this)">특근<br>주말</button>
+          <button class="type-btn" data-type="연차" onclick="selectType(this)">연차</button>
+        </div>
+      </div>
+      <div class="field" id="field-regular-h" style="display:none;">
+        <label>정규 근무 시간</label>
+        <select id="f-regular-h" onchange="updateMdPreview()">
+          <option value="1">1h</option>
+          <option value="2">2h</option>
+          <option value="3">3h</option>
+          <option value="4">4h</option>
+          <option value="5">5h</option>
+          <option value="6">6h</option>
+          <option value="7">7h</option>
+          <option value="8" selected>8h</option>
+        </select>
+      </div>
+      <div class="field" id="field-special-h" style="display:none;">
+        <label>특근 근무 시간</label>
+        <select id="f-special-h" onchange="updateMdPreview()">
+          <option value="1">1h</option>
+          <option value="2">2h</option>
+          <option value="3">3h</option>
+          <option value="4">4h</option>
+          <option value="5">5h</option>
+          <option value="6">6h</option>
+          <option value="7">7h</option>
+          <option value="8" selected>8h</option>
+        </select>
+      </div>
+      <div class="field" id="field-ot" style="display:none;">
+        <label>잔업 시간</label>
+        <select id="f-ot" onchange="updateMdPreview()">
+          <option value="0.5">0.5h</option>
+          <option value="1">1h</option>
+          <option value="1.5">1.5h</option>
+          <option value="2" selected>2h</option>
+          <option value="2.5">2.5h</option>
+          <option value="3">3h</option>
+          <option value="3.5">3.5h</option>
+          <option value="4">4h</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>업무 내용 / 현장명 <span style="font-weight:400;color:var(--text3);">(선택)</span></label>
+        <input type="text" id="f-desc" placeholder="예: 부산현장, 도면 검토 등">
+      </div>
+      <div class="field">
+        <label>공수 미리보기</label>
+        <div class="md-preview">
+          <div class="md-val" id="md-preview-val">—</div>
+          <div class="md-lbl" id="md-preview-lbl">유형을 선택하세요</div>
+        </div>
+      </div>
+    </div>
+    <div class="form-footer">
+      <button class="btn btn-primary btn-full" onclick="saveRecord()">저장</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API_BASE = 'https://sejong-prod.vercel.app';
+
+let currentUser = null;
+let employees = [];
+let myEntries = [];
+let pendingEmp = null; // PIN 변경 대기 직원
+
+/* ── 초기화 ── */
+window.addEventListener('DOMContentLoaded', async () => {
+  const saved = sessionStorage.getItem('wk_session');
+  if (saved) {
+    try { currentUser = JSON.parse(saved); } catch {}
+  }
+  if (currentUser) {
+    await loadData();
+    showMain();
+  } else {
+    show('screen-login');
+  }
+
+  document.getElementById('li-name').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+  document.getElementById('li-pin').addEventListener('keydown',  e => { if(e.key==='Enter') doLogin(); });
+  document.getElementById('pc-pin1').addEventListener('keydown', e => { if(e.key==='Enter') document.getElementById('pc-pin2').focus(); });
+  document.getElementById('pc-pin2').addEventListener('keydown', e => { if(e.key==='Enter') doChangePin(); });
+});
+
+function show(id) {
+  ['screen-login','screen-pinchange','screen-main','screen-form'].forEach(s => {
+    document.getElementById(s).classList.toggle('hidden', s !== id);
+  });
+}
+
+/* ── 로그인 ── */
+async function doLogin() {
+  const name = document.getElementById('li-name').value.trim();
+  const pin  = document.getElementById('li-pin').value.trim();
+  const err  = document.getElementById('li-error');
+  err.textContent = '';
+
+  if (!name) { err.textContent = '이름을 입력하세요.'; return; }
+  if (!pin)  { err.textContent = 'PIN을 입력하세요.'; return; }
+
+  err.textContent = '확인 중...';
+  try {
+    const res = await fetch(API_BASE + '/api/load');
+    const json = await res.json();
+    employees = (json.data?.employees) || [];
+
+    const emp = employees.find(e => e.name === name);
+    if (!emp) { err.textContent = '등록된 이름이 아닙니다.'; return; }
+
+    const empPin = emp.pin || '0000';
+    if (empPin !== pin) { err.textContent = 'PIN이 올바르지 않습니다.'; document.getElementById('li-pin').value=''; return; }
+
+    if (!emp.pinChanged) {
+      pendingEmp = emp;
+      show('screen-pinchange');
+      err.textContent = '';
+      return;
+    }
+
+    setCurrentUser(emp);
+    await loadData();
+    showMain();
+  } catch(e) {
+    err.textContent = '서버 연결 오류. 잠시 후 다시 시도하세요.';
+  }
+}
+
+/* ── PIN 변경 ── */
+async function doChangePin() {
+  const p1  = document.getElementById('pc-pin1').value.trim();
+  const p2  = document.getElementById('pc-pin2').value.trim();
+  const err = document.getElementById('pc-error');
+  err.textContent = '';
+
+  if (!/^\d{4}$/.test(p1)) { err.textContent = 'PIN은 4자리 숫자여야 합니다.'; return; }
+  if (p1 === '0000')        { err.textContent = '기본 PIN(0000)은 사용할 수 없습니다.'; return; }
+  if (p1 !== p2)            { err.textContent = '두 PIN이 일치하지 않습니다.'; document.getElementById('pc-pin2').value=''; return; }
+
+  err.textContent = '저장 중...';
+  try {
+    // 최신 데이터 불러와서 해당 직원 PIN 변경 후 저장
+    const res = await fetch(API_BASE + '/api/load');
+    const json = await res.json();
+    const allEmps = json.data?.employees || [];
+    const target = allEmps.find(e => e.id === pendingEmp.id);
+    if (!target) { err.textContent = '직원 정보를 찾을 수 없습니다.'; return; }
+    target.pin = p1;
+    target.pinChanged = true;
+
+    await fetch(API_BASE + '/api/save', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ employees: allEmps })
+    });
+
+    pendingEmp = target;
+    setCurrentUser(target);
+    await loadData();
+    showMain();
+    showToast('PIN 설정 완료! 환영합니다 ' + target.name + '님');
+  } catch(e) {
+    err.textContent = '저장 중 오류가 발생했습니다.';
+  }
+}
+
+/* ── 세션 ── */
+function setCurrentUser(emp) {
+  currentUser = { id: emp.id, name: emp.name, position: emp.position || '', div: emp.div || '' };
+  sessionStorage.setItem('wk_session', JSON.stringify(currentUser));
+}
+
+function doLogout() {
+  currentUser = null;
+  sessionStorage.removeItem('wk_session');
+  document.getElementById('li-name').value = '';
+  document.getElementById('li-pin').value = '';
+  document.getElementById('li-error').textContent = '';
+  show('screen-login');
+}
+
+/* ── 데이터 로드 ── */
+async function loadData() {
+  try {
+    const res = await fetch(API_BASE + '/api/load');
+    const json = await res.json();
+    const all = json.data?.mdEntries || [];
+    myEntries = all.filter(e => String(e.employeeId) === String(currentUser.id))
+                   .sort((a,b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+  } catch(e) {
+    myEntries = [];
+  }
+}
+
+/* ── 메인 화면 ── */
+let calYear, calMonth;
+
+function showMain() {
+  document.getElementById('main-username').textContent = currentUser.name;
+  document.getElementById('main-usersub').textContent = currentUser.position || currentUser.div || '';
+  const now = new Date();
+  calYear = now.getFullYear();
+  calMonth = now.getMonth() + 1;
+  renderSummary();
+  renderCalendar();
+  renderList();
+  show('screen-main');
+}
+
+function moveMonth(dir) {
+  calMonth += dir;
+  if (calMonth > 12) { calMonth = 1; calYear++; }
+  if (calMonth < 1)  { calMonth = 12; calYear--; }
+  renderCalendar();
+}
+
+const HOLIDAYS = {
+  '2026-01-01': '신정',
+  '2026-02-16': '설날연휴',
+  '2026-02-17': '설날',
+  '2026-02-18': '설날연휴',
+  '2026-03-01': '삼일절',
+  '2026-03-02': '대체공휴일',
+  '2026-05-05': '어린이날',
+  '2026-05-24': '부처님오신날',
+  '2026-05-25': '대체공휴일',
+  '2026-06-06': '현충일',
+  '2026-08-15': '광복절',
+  '2026-08-17': '대체공휴일',
+  '2026-09-30': '추석연휴',
+  '2026-10-01': '추석',
+  '2026-10-02': '추석연휴',
+  '2026-10-03': '개천절',
+  '2026-10-05': '대체공휴일',
+  '2026-10-09': '한글날',
+  '2026-12-25': '크리스마스',
+};
+
+function renderCalendar() {
+  const ym = calYear + '-' + String(calMonth).padStart(2,'0');
+  document.getElementById('cal-title').textContent = calYear + '년 ' + calMonth + '월';
+
+  // 날짜별 집계 (정규+OT 합산)
+  const dayMap = {}; // 'YYYY-MM-DD' → { totalH, types: Set }
+  myEntries.forEach(e => {
+    if (!e.date.startsWith(ym)) return;
+    if (!dayMap[e.date]) dayMap[e.date] = { totalH: 0, types: new Set() };
+    dayMap[e.date].totalH += (Number(e.regular) || 0) + (Number(e.ot) || 0);
+    (e.item || '').split('+').forEach(t => dayMap[e.date].types.add(t.trim()));
+  });
+
+  const firstDay = new Date(calYear, calMonth - 1, 1).getDay(); // 0=일
+  const lastDate = new Date(calYear, calMonth, 0).getDate();
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const DOWS = ['일','월','화','수','목','금','토'];
+  let html = DOWS.map(d => `<div class="cal-dow">${d}</div>`).join('');
+
+  // 첫 주 빈 칸
+  for (let i = 0; i < firstDay; i++) html += '<div class="cal-cell empty"></div>';
+
+  for (let d = 1; d <= lastDate; d++) {
+    const dateStr = ym + '-' + String(d).padStart(2,'0');
+    const dow = (firstDay + d - 1) % 7;
+    const isToday = dateStr === todayStr;
+    const info = dayMap[dateStr];
+
+    let dotHtml = '';
+    if (info) {
+      const types = [...info.types];
+      const dotClass = types.includes('연차') && types.length === 1 ? 'cal-dot-연차'
+                     : types.includes('특근') ? 'cal-dot-특근'
+                     : types.length > 1       ? 'cal-dot-복합'
+                     : types.includes('잔업')  ? 'cal-dot-잔업'
+                     : 'cal-dot-정규';
+      const hStr = info.totalH % 1 === 0 ? info.totalH + 'h' : info.totalH.toFixed(1) + 'h';
+      dotHtml = `<span class="cal-hours ${dotClass}">${hStr}</span>`;
+    }
+
+    const holiday = HOLIDAYS[dateStr];
+    const isHoli = !!holiday && dow !== 0 && dow !== 6;
+    const holiHtml = holiday ? `<span class="cal-holi-name">${holiday}</span>` : '';
+
+    html += `<div class="cal-cell${isToday?' today':''}${dow===0?' sun':dow===6?' sat':isHoli?' holi':''}" onclick="filterByDate('${dateStr}')">
+      <span class="cal-day">${d}</span>${holiHtml}${dotHtml}
+    </div>`;
+  }
+
+  document.getElementById('cal-grid').innerHTML = html;
+}
+
+function filterByDate(dateStr) {
+  // 해당 날짜의 기록으로 스크롤
+  const list = document.getElementById('record-list');
+  const items = list.querySelectorAll('.record-item');
+  items.forEach(el => {
+    el.style.display = el.dataset.date === dateStr ? '' : 'none';
+  });
+  // 한 번 더 클릭하면 전체 표시 (토글)
+  const hidden = [...items].some(el => el.style.display === 'none');
+  if (!hidden) items.forEach(el => el.style.display = '');
+  list.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderSummary() {
+  const now = new Date();
+  const ym = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const thisMonth = myEntries.filter(e => e.date.startsWith(ym));
+
+  const workDates = new Set();
+  let totalOt = 0, specialDays = 0, leaveDays = 0;
+
+  thisMonth.forEach(e => {
+    const types = (e.item || '').split('+');
+    const o = Number(e.ot) || 0;
+    totalOt += o;
+    if (types.includes('연차')) { leaveDays++; return; }
+    if (types.includes('특근')) specialDays++;
+    if (types.includes('정규')) workDates.add(e.date);
+  });
+
+  document.getElementById('sum-days').textContent    = workDates.size;
+  document.getElementById('sum-ot').textContent      = totalOt % 1 === 0 ? totalOt : totalOt.toFixed(1);
+  document.getElementById('sum-special').textContent = specialDays;
+  document.getElementById('sum-leave').textContent   = leaveDays;
+}
+
+function renderList() {
+  const list = document.getElementById('record-list');
+  if (!myEntries.length) {
+    list.innerHTML = '<div class="empty-hint">기록이 없습니다.<br>+ 버튼으로 추가하세요.</div>';
+    return;
+  }
+  list.innerHTML = myEntries.slice(0, 60).map(e => {
+    const r = Number(e.regular) || 0;
+    const o = Number(e.ot) || 0;
+    const md = ((r + o) / 8).toFixed(2).replace(/\.?0+$/, '');
+    const desc = e.projName || e.work || '';
+    const otStr = o > 0 ? ` + 잔업 ${o}h` : '';
+    // 복합 유형(예: 정규+잔업)은 첫 번째 유형으로 색상 결정
+    const itemStr = e.item || '정규';
+    const badgeType = itemStr.split('+')[0];
+    return `
+      <div class="record-item" data-date="${e.date}">
+        <span class="record-type-badge type-${badgeType}">${itemStr}</span>
+        <div class="record-info">
+          <div class="record-date">${formatDate(e.date)}</div>
+          <div class="record-desc">${desc || '—'}</div>
+          <div class="record-md">${r}h${otStr} &nbsp;·&nbsp; 공수 ${md}</div>
+        </div>
+        <button class="record-del" onclick="deleteRecord('${e.id}')" title="삭제">×</button>
+      </div>`;
+  }).join('');
+}
+
+function formatDate(d) {
+  if (!d) return '';
+  const [y,m,day] = d.split('-');
+  const dow = ['일','월','화','수','목','금','토'][new Date(d+'T00:00:00').getDay()];
+  return `${y}.${m}.${day} (${dow})`;
+}
+
+/* ── 기록 추가 폼 ── */
+let selectedTypes = new Set();
+
+// 선택 규칙:
+// 연차 → 단독만 가능 (다른 모든 것 해제)
+// 특근 ↔ 정규 상호 배타
+// 나머지 조합 자유
+function selectType(btn) {
+  const type = btn.dataset.type;
+
+  if (type === '연차') {
+    // 연차: 이미 선택돼 있으면 해제, 아니면 단독 선택
+    if (selectedTypes.has('연차')) {
+      selectedTypes.clear();
+    } else {
+      selectedTypes.clear();
+      selectedTypes.add('연차');
+    }
+  } else {
+    // 다른 유형 선택 시 연차 해제
+    selectedTypes.delete('연차');
+    // 특근 ↔ 정규 상호 배타
+    if (type === '특근') selectedTypes.delete('정규');
+    if (type === '정규') selectedTypes.delete('특근');
+    // 토글
+    if (selectedTypes.has(type)) selectedTypes.delete(type);
+    else selectedTypes.add(type);
+  }
+
+  updateTypeButtons();
+  updateMdPreview();
+}
+
+function updateTypeButtons() {
+  document.querySelectorAll('.type-btn').forEach(b => {
+    const t = b.dataset.type;
+    b.className = 'type-btn' + (selectedTypes.has(t) ? ' active-' + t : '');
+  });
+  document.getElementById('field-regular-h').style.display = selectedTypes.has('정규') ? '' : 'none';
+  document.getElementById('field-special-h').style.display = selectedTypes.has('특근') ? '' : 'none';
+  document.getElementById('field-ot').style.display        = selectedTypes.has('잔업') ? '' : 'none';
+}
+
+function openForm() {
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('f-date').value = today;
+  document.getElementById('f-desc').value = '';
+  document.getElementById('f-ot').value = '2';
+  document.getElementById('f-regular-h').value = '8';
+  document.getElementById('f-special-h').value = '8';
+  selectedTypes = new Set();
+  updateTypeButtons();
+  document.getElementById('md-preview-val').textContent = '—';
+  document.getElementById('md-preview-lbl').textContent = '유형을 선택하세요';
+  document.getElementById('screen-form').classList.remove('hidden');
+}
+
+function closeForm() {
+  document.getElementById('screen-form').classList.add('hidden');
+}
+
+function closeFormOutside(e) {
+  if (e.target === document.getElementById('screen-form')) closeForm();
+}
+
+function updateMdPreview() {
+  const valEl = document.getElementById('md-preview-val');
+  const lblEl = document.getElementById('md-preview-lbl');
+  if (!selectedTypes.size) { valEl.textContent='—'; lblEl.textContent='유형을 선택하세요'; return; }
+  const {r,o} = getHours();
+  const md = (r+o)/8;
+  valEl.textContent = md % 1 === 0 ? md.toFixed(1) : md.toFixed(2).replace(/0+$/,'');
+  const parts = [];
+  if (r > 0) parts.push('정규 ' + r + 'h');
+  if (o > 0) parts.push('잔업 ' + o + 'h');
+  if (!r && !o) parts.push('—');
+  lblEl.textContent = parts.join(' + ');
+}
+
+function getHours() {
+  let r = 0, o = 0;
+  if (selectedTypes.has('정규')) r += Number(document.getElementById('f-regular-h').value) || 8;
+  if (selectedTypes.has('특근')) r += Number(document.getElementById('f-special-h').value) || 8;
+  if (selectedTypes.has('잔업')) o += Number(document.getElementById('f-ot').value) || 0;
+  // 연차는 0h
+  return {r, o};
+}
+
+/* ── 저장 ── */
+async function saveRecord() {
+  if (!selectedTypes.size) { showToast('작업 유형을 선택하세요.'); return; }
+  const date = document.getElementById('f-date').value;
+  if (!date) { showToast('날짜를 선택하세요.'); return; }
+
+  const {r,o} = getHours();
+  const desc   = document.getElementById('f-desc').value.trim();
+  const itemLabel = [...selectedTypes].join('+');
+
+  const entry = {
+    id: 'wr_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+    employeeId: currentUser.id,
+    employeeName: currentUser.name,
+    employeePosition: currentUser.position || '',
+    date,
+    projCode: '',
+    projName: desc,
+    item: itemLabel,
+    work: '',
+    regular: r,
+    ot: o,
+    createdAt: new Date().toISOString()
+  };
+
+  try {
+    // 최신 mdEntries 불러와서 병합 후 저장
+    const res = await fetch(API_BASE + '/api/load');
+    const json = await res.json();
+    const serverEntries = json.data?.mdEntries || [];
+    serverEntries.push(entry);
+
+    const payload = {
+      mdEntries: serverEntries,
+      lastModified: new Date().toISOString(),
+      modifiedBy: currentUser.name
+    };
+    const saveRes = await fetch(API_BASE + '/api/save', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if (!saveRes.ok) {
+      const errBody = await saveRes.json().catch(() => ({}));
+      throw new Error(saveRes.status + ' ' + (errBody.error || ''));
+    }
+
+    myEntries.unshift(entry);
+    myEntries.sort((a,b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+    closeForm();
+    renderSummary();
+    renderCalendar();
+    renderList();
+    showToast('저장되었습니다.');
+  } catch(e) {
+    showToast('저장 실패: ' + e.message);
+  }
+}
+
+/* ── 삭제 ── */
+async function deleteRecord(id) {
+  if (!confirm('이 기록을 삭제할까요?')) return;
+  try {
+    const res = await fetch(API_BASE + '/api/load');
+    const json = await res.json();
+    const serverEntries = (json.data?.mdEntries || []).filter(e => e.id !== id);
+
+    const delRes = await fetch(API_BASE + '/api/save', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ mdEntries: serverEntries, lastModified: new Date().toISOString(), modifiedBy: currentUser.name })
+    });
+    if (!delRes.ok) {
+      const errBody = await delRes.json().catch(() => ({}));
+      throw new Error(delRes.status + ' ' + (errBody.error || ''));
+    }
+
+    myEntries = myEntries.filter(e => e.id !== id);
+    renderSummary();
+    renderCalendar();
+    renderList();
+    showToast('삭제되었습니다.');
+  } catch(e) {
+    showToast('삭제 실패: ' + e.message);
+  }
+}
+
+/* ── 토스트 ── */
+let _toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+</script>
+</body>
+</html>
