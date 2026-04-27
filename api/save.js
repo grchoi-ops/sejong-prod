@@ -6,8 +6,33 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
+async function upsertKey(key, value) {
+  const now = new Date().toISOString();
+
+  // 기존 행 존재 여부 확인
+  const { data: existing, error: selErr } = await supabase
+    .from('app_data')
+    .select('key')
+    .eq('key', key)
+    .maybeSingle();
+
+  if (selErr) throw selErr;
+
+  if (existing) {
+    const { error } = await supabase
+      .from('app_data')
+      .update({ value, updated_at: now })
+      .eq('key', key);
+    if (error) throw error;
+  } else {
+    const { error } = await supabase
+      .from('app_data')
+      .insert({ key, value, updated_at: now });
+    if (error) throw error;
+  }
+}
+
 module.exports = async (req, res) => {
-  // CORS 허용
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -16,54 +41,39 @@ module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST만 허용' });
 
   try {
-    // [Phase1] purchaseDB, lastModified, modifiedBy 추가 지원
-    const { employees, projects, dailyData, purchaseDB, lastModified, modifiedBy } = req.body;
+    const { employees, projects, dailyData, purchaseDB, mdEntries, lastModified, modifiedBy } = req.body;
 
-    const now = new Date().toISOString();
-    const updates = [];
+    const tasks = [];
+    if (employees    !== undefined) tasks.push(upsertKey('employees',    employees));
+    if (projects     !== undefined) tasks.push(upsertKey('projects',     projects));
+    if (dailyData    !== undefined) tasks.push(upsertKey('dailyData',    dailyData));
+    if (purchaseDB   !== undefined) tasks.push(upsertKey('purchaseDB',   purchaseDB));
+    if (mdEntries    !== undefined) tasks.push(upsertKey('mdEntries',    mdEntries));
+    if (lastModified !== undefined) tasks.push(upsertKey('lastModified', lastModified));
+    if (modifiedBy   !== undefined) tasks.push(upsertKey('modifiedBy',   modifiedBy));
 
-    if (employees !== undefined) {
-      updates.push({ key: 'employees', value: employees, updated_at: now });
-    }
-    if (projects !== undefined) {
-      updates.push({ key: 'projects', value: projects, updated_at: now });
-    }
-    if (dailyData !== undefined) {
-      updates.push({ key: 'dailyData', value: dailyData, updated_at: now });
-    }
-    // [Phase1] 구매요청 DB 저장
-    if (purchaseDB !== undefined) {
-      updates.push({ key: 'purchaseDB', value: purchaseDB, updated_at: now });
-    }
-    // [R2] 충돌 감지용 메타 저장
-    if (lastModified !== undefined) {
-      updates.push({
-        key: 'lastModified',
-        value: lastModified,
-        updated_at: now
-      });
-    }
-    if (modifiedBy !== undefined) {
-      updates.push({
-        key: 'modifiedBy',
-        value: modifiedBy,
-        updated_at: now
-      });
-    }
-
-    if (updates.length === 0) {
+    if (tasks.length === 0) {
       return res.status(400).json({ success: false, error: '저장할 데이터 없음' });
     }
 
-    const { error } = await supabase
-      .from('app_data')
-      .upsert(updates, { onConflict: 'key' });
+    await Promise.all(tasks);
 
-    if (error) throw error;
+    // 저장 후 mdEntries 건수 검증
+    let savedCount = null;
+    if (mdEntries !== undefined) {
+      const { data } = await supabase
+        .from('app_data')
+        .select('value')
+        .eq('key', 'mdEntries')
+        .maybeSingle();
+      const val = data?.value;
+      savedCount = Array.isArray(val) ? val.length : (typeof val === 'string' ? val.length : -1);
+    }
 
     return res.status(200).json({
       success: true,
-      savedAt: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
+      savedAt: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
+      savedCount
     });
 
   } catch (err) {
