@@ -86,21 +86,36 @@ function _applyRoleUI() {
   const role = currentUser?.mdRole || '일반';
   const allRestrictedTabs = ['settings', 'wo', 'daily', 'report', 'purchase', 'dashboard', 'stats'];
   const inspectorHiddenTabs = ['settings', 'wo', 'report', 'purchase'];
+  const viewerHiddenTabs = ['settings', 'purchase', 'manday'];
+
+  // 저장 버튼 표시 여부
+  const isViewer = role === '열람용';
+  const saveBtns = [document.getElementById('daily-save-btn'), document.querySelector('.server-save-btn'), document.getElementById('load-btn')];
+  saveBtns.forEach(el => { if (el) el.style.display = isViewer ? 'none' : ''; });
 
   if (role === '관리자') {
-    // 모든 탭 표시
     allRestrictedTabs.forEach(tab => {
       const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
       if (btn) btn.style.display = '';
     });
   } else if (role === '검사관') {
-    // 대시보드·일일입력·M/D만 표시
+    // 대시보드·일일입력·월간통계·M/D만 표시
     inspectorHiddenTabs.forEach(tab => {
       const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
       if (btn) btn.style.display = 'none';
     });
     const activeBtn = document.querySelector('.tab-btn.active');
     if (activeBtn && inspectorHiddenTabs.includes(activeBtn.dataset.tab)) {
+      switchToTab('dashboard');
+    }
+  } else if (role === '열람용') {
+    // 설정·워크오더·구매요청 숨김, 나머지 열람 가능
+    viewerHiddenTabs.forEach(tab => {
+      const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+      if (btn) btn.style.display = 'none';
+    });
+    const activeBtn = document.querySelector('.tab-btn.active');
+    if (activeBtn && viewerHiddenTabs.includes(activeBtn.dataset.tab)) {
       switchToTab('dashboard');
     }
   } else {
@@ -561,7 +576,7 @@ function renderEmployees() {
         '</select>' +
       '</div>' +
       '<select style="font-size:11px;flex-shrink:0;" onchange="updateEmpField(' + emp.id + ',\'mdRole\',this.value)">' +
-        ['관리자','검사관','일반'].map(r =>
+        ['관리자','검사관','열람용','일반'].map(r =>
           '<option value="' + r + '"' + (emp.mdRole === r ? ' selected' : '') + '>' + r + '</option>'
         ).join('') +
       '</select>' +
@@ -1478,13 +1493,24 @@ function buildReportHTML(date) {
         '<td style="font-family:monospace;font-weight:700;">' + (prevSum+todaySum||'-') + '</td></tr>' : '');
   }).filter(Boolean).join('');
 
+  // 장기출장자 그룹화 (출장지별)
+  const longTripGroups = {};
+  state.employees.filter(e => e.longTermTrip).forEach(e => {
+    const loc = e.tripLocation || '미정';
+    if (!longTripGroups[loc]) longTripGroups[loc] = [];
+    longTripGroups[loc].push(e.name);
+  });
+
   const tripRows = [
     ...Object.entries(tripByProj).map(([pId, names]) => {
       const proj = state.projects.find(p => String(p.id) === String(pId));
       const place = proj ? proj.client : pId;
       return '<div style="margin-bottom:3px;">출장 : ' + place + ' (' + names.length + '명) — ' + names.join(', ') + '</div>';
     }),
-    ...(tripNoProjEmps.length ? ['<div style="margin-bottom:3px;">출장 : 기타 (' + tripNoProjEmps.length + '명) — ' + tripNoProjEmps.join(', ') + '</div>'] : [])
+    ...(tripNoProjEmps.length ? ['<div style="margin-bottom:3px;">출장 : 기타 (' + tripNoProjEmps.length + '명) — ' + tripNoProjEmps.join(', ') + '</div>'] : []),
+    ...Object.entries(longTripGroups).map(([loc, names]) =>
+      '<div style="margin-bottom:3px;">장기출장 : ' + loc + ' (' + names.length + '명) — ' + names.join(', ') + '</div>'
+    )
   ].join('');
 
   const otStr = overtimeEmps.length > 0 ? overtimeEmps.map(e => e.name+'('+e.hours+'h)').join(', ') : '';
@@ -4389,7 +4415,7 @@ function md_setCurrentUser(emp) {
     position: emp.position || '',
     div: emp.div,
     mdRole: emp.mdRole || '일반',
-    role: emp.mdRole === '관리자' ? 'admin' : 'user'
+    role: emp.mdRole === '관리자' ? 'admin' : emp.mdRole === '열람용' ? 'viewer' : 'user'
   };
   sessionStorage.setItem('md_session', JSON.stringify(currentUser));
 }
