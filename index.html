@@ -12,13 +12,13 @@
 <header class="app-header" style="display:none;">
   <div class="app-logo">㈜<span>SEJONG</span> TECHNOLOGY</div>
   <div class="app-title">생산부 작업관리 시스템</div>
-  <div id="sync-status" onclick="manualSync()"
+  <div id="sync-status" class="server-save-btn" onclick="manualSync()"
     style="font-size:12px;padding:4px 12px;border-radius:20px;background:var(--surface3);color:var(--text3);white-space:nowrap;cursor:pointer;border:1px solid var(--border);transition:all 0.15s;flex-shrink:0;"
     title="클릭하면 서버에 저장합니다">
     ☁️ 서버 저장
   </div>
   <!-- [B2] 서버 불러오기 버튼 -->
-  <div onclick="manualLoad()"
+  <div id="load-btn" onclick="manualLoad()"
     style="font-size:12px;padding:4px 12px;border-radius:20px;background:var(--surface3);color:var(--text3);white-space:nowrap;cursor:pointer;border:1px solid var(--border);transition:all 0.15s;flex-shrink:0;"
     title="서버 데이터로 현재 로컬을 덮어씁니다">
     📥 불러오기
@@ -80,6 +80,7 @@
         <select id="new-emp-role">
           <option value="관리자">관리자</option>
           <option value="검사관">검사관</option>
+          <option value="열람용">열람용</option>
           <option value="일반">일반</option>
         </select>
         <button class="btn btn-primary btn-sm" onclick="addEmployee()">+ 직원 추가</button>
@@ -186,7 +187,7 @@
       <button onclick="changeDate(1)">›</button>
     </div>
     <div id="day-of-week" style="font-size:13px;color:var(--text2);"></div>
-    <button class="btn btn-success btn-sm" onclick="saveDailyData()">✓ 저장</button>
+    <button id="daily-save-btn" class="btn btn-success btn-sm" onclick="saveDailyData()">✓ 저장</button>
     <button class="btn btn-ghost btn-sm" onclick="copyFromPrevDay()">↑ 전날 복사</button>
     <button class="btn btn-ghost btn-sm" onclick="showCopyDatePicker('daily')" title="특정 날짜에서 복사">📋 날짜 복사</button>
     <!-- [단계15] 일괄 휴무 버튼 -->
