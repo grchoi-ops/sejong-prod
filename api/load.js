@@ -7,10 +7,11 @@ const supabase = createClient(
 );
 
 module.exports = async (req, res) => {
-  // CORS 허용
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET만 허용' });
@@ -26,14 +27,25 @@ module.exports = async (req, res) => {
     const result = {};
     data.forEach(row => { result[row.key] = row.value; });
 
+    const mdRaw = result.mdEntries;
+    const mdArr = Array.isArray(mdRaw) ? mdRaw
+                : (typeof mdRaw === 'string' ? (() => { try { const p = JSON.parse(mdRaw); return Array.isArray(p) ? p : []; } catch { return []; } })()
+                : []);
+
     return res.status(200).json({
       success: true,
+      _debug: {
+        rowCount: data.length,
+        keys: data.map(r => r.key),
+        mdRawType: Array.isArray(mdRaw) ? 'array' : typeof mdRaw,
+        mdLength: mdArr.length
+      },
       data: {
         employees:    result.employees    || [],
         projects:     result.projects     || [],
         dailyData:    result.dailyData    || {},
-        // [Phase1] 구매요청 DB + 충돌 감지 메타 추가
         purchaseDB:   result.purchaseDB   || [],
+        mdEntries:    mdArr,
         lastModified: result.lastModified || null,
         modifiedBy:   result.modifiedBy   || null
       }
