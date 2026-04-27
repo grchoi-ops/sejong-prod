@@ -297,7 +297,8 @@ let myEntries = [];
 let pendingEmp = null; // PIN 변경 대기 직원
 
 function safeLoad(url) {
-  return fetch(url, { cache: 'no-store' }).then(r => r.json());
+  const sep = url.includes('?') ? '&' : '?';
+  return fetch(url + sep + '_t=' + Date.now(), { cache: 'no-store' }).then(r => r.json());
 }
 function toArr(val) {
   if (Array.isArray(val)) return val;
@@ -426,10 +427,20 @@ function doLogout() {
 async function loadData() {
   try {
     const json = await safeLoad(API_BASE + '/api/load');
-    const all = toArr(json.data?.mdEntries);
+    // 디버그: API 응답 자체 확인
+    if (!json.success) {
+      showToast(`[디버그] load 실패: ${json.error || JSON.stringify(json).slice(0,80)}`, 8000);
+      myEntries = [];
+      return;
+    }
+    const d = json._debug || {};
+    const raw = json.data?.mdEntries;
+    const all = toArr(raw);
     myEntries = all.filter(e => String(e.employeeId) === String(currentUser.id))
                    .sort((a,b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+    showToast(`[디버그] DB행:${d.rowCount} 키:${(d.keys||[]).join(',')} mdLen:${d.mdLength} 전체:${all.length}`, 8000);
   } catch(e) {
+    showToast(`[디버그] load 예외: ${e.message}`, 8000);
     myEntries = [];
   }
 }
@@ -456,12 +467,14 @@ function moveMonth(dir) {
 }
 
 const HOLIDAYS = {
+  '2025-05-01': '근로자의날',
   '2026-01-01': '신정',
   '2026-02-16': '설날연휴',
   '2026-02-17': '설날',
   '2026-02-18': '설날연휴',
   '2026-03-01': '삼일절',
   '2026-03-02': '대체공휴일',
+  '2026-05-01': '근로자의날',
   '2026-05-05': '어린이날',
   '2026-05-24': '부처님오신날',
   '2026-05-25': '대체공휴일',
@@ -695,10 +708,16 @@ function getHours() {
 }
 
 /* ── 저장 ── */
+let _saving = false;
 async function saveRecord() {
+  if (_saving) return;
   if (!selectedTypes.size) { showToast('작업 유형을 선택하세요.'); return; }
   const date = document.getElementById('f-date').value;
   if (!date) { showToast('날짜를 선택하세요.'); return; }
+
+  const saveBtn = document.querySelector('#screen-form .btn-primary');
+  _saving = true;
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '저장 중…'; }
 
   const {r,o} = getHours();
   const desc   = document.getElementById('f-desc').value.trim();
@@ -748,6 +767,9 @@ async function saveRecord() {
     showToast('저장됨 · 서버 ' + (saveBody.savedCount ?? '?') + '개');
   } catch(e) {
     showToast('저장 실패: ' + e.message);
+  } finally {
+    _saving = false;
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '저장'; }
   }
 }
 
@@ -780,12 +802,12 @@ async function deleteRecord(id) {
 
 /* ── 토스트 ── */
 let _toastTimer;
-function showToast(msg) {
+function showToast(msg, duration) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), duration || 2200);
 }
 </script>
 </body>
