@@ -9,16 +9,16 @@ const supabase = createClient(
 async function upsertKey(key, value) {
   const now = new Date().toISOString();
 
-  // 기존 행 존재 여부 확인
-  const { data: existing, error: selErr } = await supabase
+  // 기존 행 존재 여부 확인 (중복 행 대비 limit 1)
+  const { data: rows, error: selErr } = await supabase
     .from('app_data')
     .select('key')
     .eq('key', key)
-    .maybeSingle();
+    .limit(1);
 
   if (selErr) throw selErr;
 
-  if (existing) {
+  if (rows && rows.length > 0) {
     const { error } = await supabase
       .from('app_data')
       .update({ value, updated_at: now })
