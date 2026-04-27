@@ -137,9 +137,9 @@ select option{background:var(--surface);}
 .type-btn.active-특근{background:rgba(124,58,237,.15);border-color:var(--purple);color:var(--purple);}
 .type-btn.active-반차{background:rgba(5,150,105,.15);border-color:var(--green);color:var(--green);}
 .type-btn.active-연차{background:rgba(100,116,139,.15);border-color:var(--text3);color:var(--text3);}
-.md-preview{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center;}
-.md-preview .md-val{font-size:36px;font-weight:900;color:var(--accent);}
-.md-preview .md-lbl{font-size:17px;color:var(--text3);margin-top:4px;}
+.md-preview{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:18px;text-align:center;}
+.md-preview .md-val{display:none;}
+.md-preview .md-lbl{font-size:20px;font-weight:700;color:var(--text1);}
 .form-footer{padding:0 20px 20px;}
 </style>
 </head>
@@ -273,7 +273,7 @@ select option{background:var(--surface);}
         <input type="text" id="f-desc" placeholder="예: 부산현장, 도면 검토 등">
       </div>
       <div class="field">
-        <label>공수 미리보기</label>
+        <label>시간 미리보기</label>
         <div class="md-preview">
           <div class="md-val" id="md-preview-val">—</div>
           <div class="md-lbl" id="md-preview-lbl">유형을 선택하세요</div>
@@ -295,6 +295,15 @@ let currentUser = null;
 let employees = [];
 let myEntries = [];
 let pendingEmp = null; // PIN 변경 대기 직원
+
+function safeLoad(url) {
+  return fetch(url, { cache: 'no-store' }).then(r => r.json());
+}
+function toArr(val) {
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') { try { const p = JSON.parse(val); return Array.isArray(p) ? p : []; } catch {} }
+  return [];
+}
 
 /* ── 초기화 ── */
 window.addEventListener('DOMContentLoaded', async () => {
@@ -333,9 +342,8 @@ async function doLogin() {
 
   err.textContent = '확인 중...';
   try {
-    const res = await fetch(API_BASE + '/api/load');
-    const json = await res.json();
-    employees = (json.data?.employees) || [];
+    const json = await safeLoad(API_BASE + '/api/load');
+    employees = toArr(json.data?.employees);
 
     const emp = employees.find(e => e.name === name);
     if (!emp) { err.textContent = '등록된 이름이 아닙니다.'; return; }
@@ -372,9 +380,8 @@ async function doChangePin() {
   err.textContent = '저장 중...';
   try {
     // 최신 데이터 불러와서 해당 직원 PIN 변경 후 저장
-    const res = await fetch(API_BASE + '/api/load');
-    const json = await res.json();
-    const allEmps = json.data?.employees || [];
+    const json = await safeLoad(API_BASE + '/api/load');
+    const allEmps = toArr(json.data?.employees);
     const target = allEmps.find(e => e.id === pendingEmp.id);
     if (!target) { err.textContent = '직원 정보를 찾을 수 없습니다.'; return; }
     target.pin = p1;
@@ -414,9 +421,8 @@ function doLogout() {
 /* ── 데이터 로드 ── */
 async function loadData() {
   try {
-    const res = await fetch(API_BASE + '/api/load');
-    const json = await res.json();
-    const all = json.data?.mdEntries || [];
+    const json = await safeLoad(API_BASE + '/api/load');
+    const all = toArr(json.data?.mdEntries);
     myEntries = all.filter(e => String(e.employeeId) === String(currentUser.id))
                    .sort((a,b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
   } catch(e) {
@@ -471,17 +477,19 @@ function renderCalendar() {
   const ym = calYear + '-' + String(calMonth).padStart(2,'0');
   document.getElementById('cal-title').textContent = calYear + '년 ' + calMonth + '월';
 
-  // 날짜별 집계 (특근·잔업 1.5배 가중)
-  const dayMap = {}; // 'YYYY-MM-DD' → { totalH, types: Set }
+  // 날짜별 집계
+  const dayMap = {}; // 'YYYY-MM-DD' → { regular, special, ot, hasLeave, types: Set }
   myEntries.forEach(e => {
     if (!e.date.startsWith(ym)) return;
-    if (!dayMap[e.date]) dayMap[e.date] = { totalH: 0, types: new Set() };
-    const entryTypes = (e.item || '').split('+');
+    if (!dayMap[e.date]) dayMap[e.date] = { regular: 0, special: 0, ot: 0, hasLeave: false, types: new Set() };
+    const entryTypes = (e.item || '').split('+').map(t => t.trim());
     const reg = Number(e.regular) || 0;
     const ot  = Number(e.ot) || 0;
-    const isSpecial = entryTypes.includes('특근');
-    dayMap[e.date].totalH += (isSpecial ? reg * 1.5 : reg) + ot * 1.5;
-    entryTypes.forEach(t => dayMap[e.date].types.add(t.trim()));
+    if (entryTypes.includes('특근')) dayMap[e.date].special += reg;
+    else dayMap[e.date].regular += reg;
+    dayMap[e.date].ot += ot;
+    if (entryTypes.includes('연차')) dayMap[e.date].hasLeave = true;
+    entryTypes.forEach(t => dayMap[e.date].types.add(t));
   });
 
   const firstDay = new Date(calYear, calMonth - 1, 1).getDay(); // 0=일
@@ -502,14 +510,12 @@ function renderCalendar() {
 
     let dotHtml = '';
     if (info) {
-      const types = [...info.types];
-      const dotClass = types.includes('연차') && types.length === 1 ? 'cal-dot-연차'
-                     : types.includes('특근') ? 'cal-dot-특근'
-                     : types.length > 1       ? 'cal-dot-복합'
-                     : types.includes('잔업')  ? 'cal-dot-잔업'
-                     : 'cal-dot-정규';
-      const hStr = info.totalH % 1 === 0 ? info.totalH + '시간' : info.totalH.toFixed(1) + '시간';
-      dotHtml = `<span class="cal-hours ${dotClass}">${hStr}</span>`;
+      const badges = [];
+      if (info.hasLeave) badges.push(['cal-dot-연차', '연차']);
+      if (info.regular > 0) badges.push(['cal-dot-정규', '정규 ' + info.regular + '시간']);
+      if (info.special > 0) badges.push(['cal-dot-특근', '특근 ' + info.special + '시간']);
+      if (info.ot > 0)      badges.push(['cal-dot-잔업', '잔업 ' + info.ot + '시간']);
+      dotHtml = badges.map(([cls, txt]) => `<span class="cal-hours ${cls}">${txt}</span>`).join('');
     }
 
     const holiday = HOLIDAYS[dateStr];
@@ -572,12 +578,11 @@ function renderList() {
     const itemStr = e.item || '정규';
     const types = itemStr.split('+');
     const isSpecial = types.includes('특근');
-    const weightedH = (isSpecial ? r * 1.5 : r) + o * 1.5;
-    const md = (weightedH / 8).toFixed(2).replace(/\.?0+$/, '');
     const desc = e.projName || e.work || '';
     const typeLabel = isSpecial ? '특근' : (r > 0 ? '정규' : '');
     const rStr = r > 0 ? `${typeLabel} ${r}시간` : '';
     const otStr = o > 0 ? (rStr ? ` + 잔업 ${o}시간` : `잔업 ${o}시간`) : '';
+    const timeStr = rStr || otStr ? `${rStr}${otStr}` : itemStr;
     const badgeType = types[0];
     return `
       <div class="record-item" data-date="${e.date}">
@@ -585,7 +590,7 @@ function renderList() {
         <div class="record-info">
           <div class="record-date">${formatDate(e.date)}</div>
           <div class="record-desc">${desc || '—'}</div>
-          <div class="record-md">${rStr}${otStr} &nbsp;·&nbsp; 공수 ${md}</div>
+          <div class="record-md">${timeStr}</div>
         </div>
         <button class="record-del" onclick="deleteRecord('${e.id}')" title="삭제">×</button>
       </div>`;
@@ -665,20 +670,15 @@ function closeFormOutside(e) {
 }
 
 function updateMdPreview() {
-  const valEl = document.getElementById('md-preview-val');
   const lblEl = document.getElementById('md-preview-lbl');
-  if (!selectedTypes.size) { valEl.textContent='—'; lblEl.textContent='유형을 선택하세요'; return; }
+  if (!selectedTypes.size) { lblEl.textContent='유형을 선택하세요'; return; }
   const {r,o} = getHours();
-  const normalR  = selectedTypes.has('정규') ? r : 0;
-  const specialR = selectedTypes.has('특근') ? r : 0;
-  const md = (normalR + specialR * 1.5 + o * 1.5) / 8;
-  valEl.textContent = md % 1 === 0 ? md.toFixed(1) : md.toFixed(2).replace(/0+$/,'');
   const parts = [];
   if (selectedTypes.has('정규') && r > 0) parts.push('정규 ' + r + '시간');
   if (selectedTypes.has('특근') && r > 0) parts.push('특근 ' + r + '시간');
   if (o > 0) parts.push('잔업 ' + o + '시간');
-  if (!normalR && !specialR && !o) parts.push('—');
-  lblEl.textContent = parts.join(' + ');
+  if (selectedTypes.has('연차')) parts.push('연차');
+  lblEl.textContent = parts.length ? parts.join(' + ') : '—';
 }
 
 function getHours() {
@@ -716,10 +716,8 @@ async function saveRecord() {
   };
 
   try {
-    // 최신 mdEntries 불러와서 병합 후 저장
-    const res = await fetch(API_BASE + '/api/load');
-    const json = await res.json();
-    const serverEntries = json.data?.mdEntries || [];
+    const json = await safeLoad(API_BASE + '/api/load');
+    const serverEntries = toArr(json.data?.mdEntries);
     serverEntries.push(entry);
 
     const payload = {
@@ -753,9 +751,8 @@ async function saveRecord() {
 async function deleteRecord(id) {
   if (!confirm('이 기록을 삭제할까요?')) return;
   try {
-    const res = await fetch(API_BASE + '/api/load');
-    const json = await res.json();
-    const serverEntries = (json.data?.mdEntries || []).filter(e => e.id !== id);
+    const json = await safeLoad(API_BASE + '/api/load');
+    const serverEntries = toArr(json.data?.mdEntries).filter(e => e.id !== id);
 
     const delRes = await fetch(API_BASE + '/api/save', {
       method: 'POST',
