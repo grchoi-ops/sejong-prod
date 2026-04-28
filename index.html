@@ -160,6 +160,7 @@
         <button onclick="changeWoDate(1)">›</button>
       </div>
       <div id="wo-day-label" style="font-size:13px;color:var(--text2);"></div>
+      <button id="wo-save-btn" class="btn btn-success btn-sm" onclick="saveWoData()">✓ 저장</button>
       <button class="btn btn-ghost btn-sm" onclick="copyWoFromYesterday()">↑ 전날 복사</button>
       <button class="btn btn-ghost btn-sm" onclick="showCopyDatePicker('wo')" title="특정 날짜에서 복사">📋 날짜 복사</button>
       <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
@@ -439,7 +440,7 @@
       <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
         <button class="btn btn-ghost" onclick="pr_resetForm()">🗑️ 초기화</button>
         <button class="btn btn-primary" onclick="pr_printFromForm()">🖨️ 인쇄 미리보기</button>
-        <button class="btn btn-success" onclick="pr_saveEntry()">💾 저장</button>
+        <button id="pr-save-btn" class="btn btn-success" onclick="pr_saveEntry()">저장</button>
       </div>
 
       <!-- 도움말 (접이식) -->
@@ -544,25 +545,6 @@
     <button class="btn btn-ghost btn-sm" onclick="md_changePin()">🔑 PIN 변경</button>
     <button class="btn btn-ghost btn-sm" onclick="md_logout()">로그아웃</button>
     <button class="btn btn-ghost btn-sm" style="margin-left:auto;" onclick="md_exportCSV()">📥 CSV</button>
-  </div>
-
-  <!-- 업무 입력 -->
-  <div class="card" style="margin-bottom:12px;">
-    <div class="card-title" style="margin-bottom:10px;">📱 업무 입력 (카톡처럼)</div>
-    <div style="background:var(--surface2);border-left:3px solid var(--accent);padding:10px 12px;border-radius:4px;font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.8;">
-      <b style="color:var(--text2);">형식:</b>
-      <span style="font-family:var(--mono);color:var(--accent);">[코드] [프로젝트명], [아이템] [업무] [시간]</span><br>
-      <b style="color:var(--text2);">예시 1:</b> <span style="font-family:var(--mono);">SJE435-26 삼성전기, V-103 외관검사 4시간</span><br>
-      <b style="color:var(--text2);">예시 2 (야근):</b> <span style="font-family:var(--mono);">SJE435-26 삼성전기, V-103 PWHT입회 정규8시간 야근2시간</span><br>
-      <b style="color:var(--text2);">예시 3 (날짜):</b> <span style="font-family:var(--mono);">4/24 SJE435-26 삼성전기, V-103 외관검사 8h</span>
-    </div>
-    <div style="display:flex;gap:8px;align-items:flex-start;">
-      <textarea id="md-input" rows="3"
-        placeholder="SJE435-26 삼성전기, V-103 외관검사 8시간"
-        style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:13px;padding:10px;resize:vertical;min-height:70px;"></textarea>
-      <button class="btn btn-primary" onclick="md_parseKakao()" style="flex-shrink:0;">미리보기</button>
-    </div>
-    <div id="md-preview"></div>
   </div>
 
   <!-- 필터 + 집계 -->
