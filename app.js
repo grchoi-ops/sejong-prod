@@ -2726,6 +2726,20 @@ function copyWoFromYesterday() {
   showToast('복사 완료', 'success');
 }
 
+async function saveWoData() {
+  saveState();
+  const btn = document.getElementById('wo-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
+  try {
+    await saveToSheet();
+    showToast('저장 완료', 'success');
+  } catch(e) {
+    showToast('서버 저장 실패 (로컬엔 저장됨)', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✓ 저장'; }
+  }
+}
+
 function printWorkOrder() {
   const signTableHTML = ''; // 워크오더 출력에는 결재란 없음
   const date = getWoDateStr();
@@ -3835,7 +3849,7 @@ function _pr_collectItems() {
 /**
  * 구매요청 저장
  */
-function pr_saveEntry() {
+async function pr_saveEntry() {
   const sel     = document.getElementById('pr-proj-sel');
   const projId  = sel ? sel.value : '';
   const proj    = state.projects.find(p => String(p.id) === projId);
@@ -3871,8 +3885,17 @@ function pr_saveEntry() {
   });
 
   saveState();
-  showToast(items.length + '개 품목 저장 완료', 'success');
-  pr_resetForm();
+  const btn = document.getElementById('pr-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
+  try {
+    await saveToSheet();
+    showToast(items.length + '개 품목 저장 완료', 'success');
+    pr_resetForm();
+  } catch(e) {
+    showToast('서버 저장 실패 (로컬엔 저장됨)', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+  }
 }
 
 /**
@@ -4533,7 +4556,7 @@ function md_renderPreview() {
       </div>`;
     } else {
       validCount++;
-      const md = ((r.regular + r.ot) / 8).toFixed(2);
+      const md = ((r.regular + r.ot * 1.5) / 8).toFixed(2);
       html += `<div style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:6px;">
         <div style="display:grid;grid-template-columns:80px 1fr;gap:3px;font-size:12px;">
           <span style="color:var(--text3);">날짜</span><span>${r.date}</span>
@@ -4611,7 +4634,7 @@ function md_renderRecent() {
     return;
   }
   list.innerHTML = entries.map(e => {
-    const md = ((e.regular + e.ot) / 8).toFixed(2);
+    const md = ((e.regular + e.ot * 1.5) / 8).toFixed(2);
     const canDel = isAdmin || e.employeeId === currentUser.id;
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;margin-bottom:6px;gap:10px;flex-wrap:wrap;">
       <div style="flex:1;min-width:200px;font-size:12px;">
@@ -4678,70 +4701,51 @@ function md_renderSummary() {
   const inspFilter = document.getElementById('md-f-insp')?.value || '';
   const isAdmin = currentUser.role === 'admin';
 
-  // dailyData 우선: 같은 직원+날짜는 dailyData 항목만 사용
-  const dailyEntries  = md_getDailyEntries();
-  const dailyCovered  = new Set(dailyEntries.map(e => `${e.employeeId}_${e.date}`));
-  const mdOnly        = state.mdEntries.filter(e => !dailyCovered.has(`${e.employeeId}_${e.date}`));
-  const combined      = [...dailyEntries, ...mdOnly];
-
   let data = isAdmin
-    ? combined
-    : combined.filter(e => e.employeeId === currentUser.id);
+    ? [...state.mdEntries]
+    : state.mdEntries.filter(e => e.employeeId === currentUser.id);
   if (from)        data = data.filter(e => e.date >= from);
   if (to)          data = data.filter(e => e.date <= to);
-  if (projFilter)  data = data.filter(e => e.projCode === projFilter);
+  if (projFilter)  data = data.filter(e => (e.projName || '') === projFilter);
   if (inspFilter)  data = data.filter(e => String(e.employeeId) === inspFilter);
+  data.sort((a, b) => b.date.localeCompare(a.date));
   if (!data.length) {
     table.innerHTML = '<div style="text-align:center;color:var(--text3);padding:24px;">조건에 맞는 데이터가 없습니다.</div>';
     return;
   }
-  const byProj = {};
-  data.forEach(e => {
-    if (!byProj[e.projCode]) {
-      byProj[e.projCode] = { code: e.projCode, name: e.projName, regular: 0, ot: 0, emps: new Set(), count: 0 };
-    }
-    byProj[e.projCode].regular += e.regular;
-    byProj[e.projCode].ot      += e.ot;
-    byProj[e.projCode].emps.add(e.employeeId);
-    byProj[e.projCode].count++;
-    if (!byProj[e.projCode].name && e.projName) byProj[e.projCode].name = e.projName;
-  });
-  const rows = Object.values(byProj).sort((a, b) => (b.regular + b.ot) - (a.regular + a.ot));
-  const totalH   = rows.reduce((s, r) => s + r.regular + r.ot, 0);
-  const totalReg = rows.reduce((s, r) => s + r.regular, 0);
-  const totalOt  = rows.reduce((s, r) => s + r.ot, 0);
-  const allEmps  = new Set(data.map(e => e.employeeId));
+  const totalReg = data.reduce((s, e) => s + (Number(e.regular) || 0), 0);
+  const totalOt  = data.reduce((s, e) => s + (Number(e.ot)      || 0), 0);
+  const totalMd  = ((totalReg + totalOt * 1.5) / 8).toFixed(2);
+  const colspan  = isAdmin ? 3 : 2;
   let html = `<div style="overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead><tr style="background:var(--surface3);">
-        <th style="padding:9px 8px;text-align:left;border:1px solid var(--border);color:var(--text2);">프로젝트코드</th>
-        <th style="padding:9px 8px;text-align:left;border:1px solid var(--border);color:var(--text2);">명칭</th>
+        ${isAdmin ? '<th style="padding:9px 8px;text-align:left;border:1px solid var(--border);color:var(--text2);">이름</th>' : ''}
+        <th style="padding:9px 8px;text-align:left;border:1px solid var(--border);color:var(--text2);">프로젝트</th>
+        <th style="padding:9px 8px;text-align:left;border:1px solid var(--border);color:var(--text2);">작업내용</th>
         <th style="padding:9px 8px;text-align:right;border:1px solid var(--border);color:var(--text2);">정규</th>
-        <th style="padding:9px 8px;text-align:right;border:1px solid var(--border);color:var(--text2);">야근</th>
+        <th style="padding:9px 8px;text-align:right;border:1px solid var(--border);color:var(--text2);">잔업/특근</th>
         <th style="padding:9px 8px;text-align:right;border:1px solid var(--border);color:var(--text2);">M/D</th>
-        ${isAdmin ? '<th style="padding:9px 8px;text-align:right;border:1px solid var(--border);color:var(--text2);">인원</th>' : ''}
-        <th style="padding:9px 8px;text-align:right;border:1px solid var(--border);color:var(--text2);">건수</th>
       </tr></thead>
       <tbody>`;
-  rows.forEach(r => {
-    const md = ((r.regular + r.ot) / 8).toFixed(2);
+  data.forEach(e => {
+    const reg = Number(e.regular) || 0;
+    const ot  = Number(e.ot)      || 0;
+    const md  = ((reg + ot * 1.5) / 8).toFixed(2);
     html += `<tr>
-      <td style="padding:8px;border:1px solid var(--border);"><strong style="color:var(--accent);">${md_esc(r.code)}</strong></td>
-      <td style="padding:8px;border:1px solid var(--border);color:var(--text2);">${md_esc(r.name)}</td>
-      <td style="padding:8px;text-align:right;border:1px solid var(--border);">${r.regular.toFixed(1)}h</td>
-      <td style="padding:8px;text-align:right;border:1px solid var(--border);color:var(--accent4);">${r.ot > 0 ? r.ot.toFixed(1) + 'h' : '-'}</td>
-      <td style="padding:8px;text-align:right;border:1px solid var(--border);"><strong style="color:var(--accent4);font-size:14px;">${md}</strong></td>
-      ${isAdmin ? `<td style="padding:8px;text-align:right;border:1px solid var(--border);">${r.emps.size}명</td>` : ''}
-      <td style="padding:8px;text-align:right;border:1px solid var(--border);color:var(--text3);">${r.count}건</td>
+      ${isAdmin ? `<td style="padding:8px;border:1px solid var(--border);">${md_esc(e.employeeName || '')}</td>` : ''}
+      <td style="padding:8px;border:1px solid var(--border);color:var(--text2);">${md_esc(e.projCode || '')}</td>
+      <td style="padding:8px;border:1px solid var(--border);color:var(--text2);">${md_esc(e.projName || '')}</td>
+      <td style="padding:8px;text-align:right;border:1px solid var(--border);">${reg > 0 ? reg.toFixed(1) + 'h' : '-'}</td>
+      <td style="padding:8px;text-align:right;border:1px solid var(--border);color:var(--accent4);">${ot > 0 ? ot.toFixed(1) + 'h' : '-'}</td>
+      <td style="padding:8px;text-align:right;border:1px solid var(--border);"><strong style="color:var(--accent4);">${md}</strong></td>
     </tr>`;
   });
   html += `<tr style="background:var(--surface3);font-weight:600;">
-    <td colspan="2" style="padding:8px;border:1px solid var(--border);">합계 (${rows.length}개 프로젝트)</td>
+    <td colspan="${colspan}" style="padding:8px;border:1px solid var(--border);">합계 (${data.length}건)</td>
     <td style="padding:8px;text-align:right;border:1px solid var(--border);">${totalReg.toFixed(1)}h</td>
     <td style="padding:8px;text-align:right;border:1px solid var(--border);color:var(--accent4);">${totalOt > 0 ? totalOt.toFixed(1) + 'h' : '-'}</td>
-    <td style="padding:8px;text-align:right;border:1px solid var(--border);"><strong style="color:var(--accent4);font-size:14px;">${(totalH / 8).toFixed(2)}</strong></td>
-    ${isAdmin ? `<td style="padding:8px;text-align:right;border:1px solid var(--border);">${allEmps.size}명</td>` : ''}
-    <td style="padding:8px;text-align:right;border:1px solid var(--border);color:var(--text3);">${data.length}건</td>
+    <td style="padding:8px;text-align:right;border:1px solid var(--border);"><strong style="color:var(--accent4);">${totalMd}</strong></td>
   </tr>
   </tbody></table></div>`;
   table.innerHTML = html;
@@ -4750,16 +4754,9 @@ function md_renderSummary() {
 function md_refreshProjectFilter() {
   const sel = document.getElementById('md-f-proj');
   if (!sel) return;
-  // dailyData + mdEntries에서 실제 사용된 projCode 수집
-  const usedCodes = new Set([
-    ...md_getDailyEntries().map(e => e.projCode),
-    ...state.mdEntries.map(e => e.projCode)
-  ]);
-  const projList = state.projects.filter(p => usedCodes.has(p.code));
+  const usedNames = [...new Set(state.mdEntries.map(e => e.projName || '').filter(Boolean))].sort();
   sel.innerHTML = '<option value="">전체 프로젝트</option>' +
-    projList
-      .map(p => `<option value="${md_esc(p.code)}">${md_esc(p.code)} · ${md_esc(p.client || p.title || '')}</option>`)
-      .join('');
+    usedNames.map(n => `<option value="${md_esc(n)}">${md_esc(n)}</option>`).join('');
   // 관리자 검사관 필터
   const inspSel = document.getElementById('md-f-insp');
   if (inspSel && currentUser?.role === 'admin') {
@@ -4814,7 +4811,7 @@ function md_exportCSV() {
   const headers = ['날짜', '이름', '프로젝트코드', '프로젝트명', '아이템', '업무', '정규(h)', '야근(h)', 'M/D'];
   const rows = data.map(e => [
     e.date, e.employeeName, e.projCode, e.projName, e.item, e.work,
-    e.regular, e.ot, ((e.regular + e.ot) / 8).toFixed(2)
+    e.regular, e.ot, ((e.regular + e.ot * 1.5) / 8).toFixed(2)
   ]);
   const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
   const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
