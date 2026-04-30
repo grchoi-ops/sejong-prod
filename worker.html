@@ -115,7 +115,7 @@ select option{background:var(--surface);}
 .empty-hint{text-align:center;padding:48px 24px;color:var(--text3);font-size:19px;}
 
 /* ── FAB ── */
-.fab{position:fixed;bottom:28px;right:24px;width:68px;height:68px;border-radius:50%;background:var(--accent);color:#fff;font-size:32px;border:none;cursor:pointer;box-shadow:0 4px 20px rgba(37,99,235,.4);display:flex;align-items:center;justify-content:center;line-height:1;transition:transform .15s;}
+.fab{position:fixed;bottom:28px;right:20px;border-radius:30px;background:var(--accent);color:#fff;font-size:18px;font-weight:700;border:none;cursor:pointer;box-shadow:0 4px 20px rgba(37,99,235,.4);display:flex;align-items:center;justify-content:center;padding:16px 24px;line-height:1;transition:transform .15s;white-space:nowrap;}
 .fab:active{transform:scale(.92);}
 
 /* ── 폼 오버레이 ── */
@@ -204,7 +204,7 @@ select option{background:var(--surface);}
     <div class="section-title">최근 기록</div>
     <div class="record-list" id="record-list"></div>
   </div>
-  <button class="fab" onclick="openForm()">+</button>
+  <button class="fab" onclick="openForm()">✏️ 일일 업무 기록</button>
 </div>
 
 <!-- 기록 추가 폼 -->
@@ -212,7 +212,7 @@ select option{background:var(--surface);}
   <div class="form-sheet" id="form-sheet">
     <div class="form-handle"></div>
     <div class="form-header">
-      <h2>기록 추가</h2>
+      <h2>일일 업무 기록</h2>
       <button class="form-close" onclick="closeForm()">✕</button>
     </div>
     <div class="form-body">
@@ -269,8 +269,8 @@ select option{background:var(--surface);}
         </select>
       </div>
       <div class="field">
-        <label>업무 내용 입력 <span style="font-weight:400;color:var(--text3);"></span></label>
-        <input type="text" id="f-desc" placeholder="예: 삼성전기 TA6603A 취부, ASK 출장 등">
+        <label>업무 내용 / 현장명 <span style="font-weight:400;color:var(--text3);">(선택)</span></label>
+        <input type="text" id="f-desc" placeholder="예: 부산현장, 도면 검토 등">
       </div>
       <div class="field">
         <label>시간 미리보기</label>
@@ -427,20 +427,16 @@ function doLogout() {
 async function loadData() {
   try {
     const json = await safeLoad(API_BASE + '/api/load');
-    // 디버그: API 응답 자체 확인
     if (!json.success) {
-      showToast(`[디버그] load 실패: ${json.error || JSON.stringify(json).slice(0,80)}`, 8000);
+      showToast('데이터 불러오기 실패', 3000);
       myEntries = [];
       return;
     }
-    const d = json._debug || {};
-    const raw = json.data?.mdEntries;
-    const all = toArr(raw);
+    const all = toArr(json.data?.mdEntries);
     myEntries = all.filter(e => String(e.employeeId) === String(currentUser.id))
                    .sort((a,b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
-    showToast(`[디버그] DB행:${d.rowCount} 키:${(d.keys||[]).join(',')} mdLen:${d.mdLength} 전체:${all.length}`, 8000);
   } catch(e) {
-    showToast(`[디버그] load 예외: ${e.message}`, 8000);
+    showToast('데이터 불러오기 실패: ' + e.message, 3000);
     myEntries = [];
   }
 }
@@ -586,7 +582,7 @@ function renderSummary() {
 function renderList() {
   const list = document.getElementById('record-list');
   if (!myEntries.length) {
-    list.innerHTML = '<div class="empty-hint">기록이 없습니다.<br>+ 버튼으로 추가하세요.</div>';
+    list.innerHTML = '<div class="empty-hint">기록이 없습니다.<br>아래 버튼으로 업무를 기록하세요.</div>';
     return;
   }
   list.innerHTML = myEntries.slice(0, 60).map(e => {
