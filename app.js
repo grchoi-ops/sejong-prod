@@ -2124,6 +2124,30 @@ function printMonthlyStats() {
     return row;
   }).join('') || '<tr><td colspan="' + (4 + usedProjs.length) + '">데이터 없음</td></tr>';
 
+  // ── 프로젝트별 직종 투입 요약 HTML ──
+  const mpCats2 = ['제관사', '용접사', '보조사', '가공', '구동부'];
+  const projSumHeader = '<tr><th>프로젝트</th>' + mpCats2.map(c => '<th>' + c + '</th>').join('') + '<th>합계(인·일)</th></tr>';
+  const projSumRows = usedProjs.length === 0
+    ? '<tr><td colspan="' + (2 + mpCats2.length) + '" style="text-align:center;color:#999;">데이터 없음</td></tr>'
+    : usedProjs.map(proj => {
+        const catDays = {};
+        mpCats2.forEach(cat => { catDays[cat] = 0; });
+        let totalDays = 0;
+        Object.values(mpByEmp).forEach(d => {
+          const days = d.projects[String(proj.id)] || 0;
+          if (days === 0) return;
+          const cat = DIV_TO_MP[d.emp.div];
+          if (cat && catDays[cat] !== undefined) catDays[cat] += days;
+          totalDays += days;
+        });
+        let row = '<tr><td style="font-weight:700;">' + proj.client + (proj.code ? ' (' + proj.code + ')' : '') + '</td>';
+        mpCats2.forEach(cat => {
+          row += '<td style="text-align:center;">' + (catDays[cat] > 0 ? catDays[cat] : '—') + '</td>';
+        });
+        row += '<td style="text-align:center;font-weight:700;">' + totalDays + '</td></tr>';
+        return row;
+      }).join('');
+
   // ── 출장 HTML ──
   const tripRows = Object.entries(tripSummary).sort((a, b) => b[1].size - a[1].size)
     .map(([place, names]) =>
@@ -2167,6 +2191,8 @@ function printMonthlyStats() {
     '<table><thead><tr><th>이름</th><th>직종</th><th>일수</th><th>시간</th></tr></thead><tbody>' + otRows + '</tbody></table>' +
     '<h2>특근 현황 (토·일)</h2>' +
     '<table><thead><tr><th>날짜</th><th>요일</th><th>출근 인원</th></tr></thead><tbody>' + swRows + '</tbody></table>' +
+    '<h2>프로젝트별 직종 투입 요약</h2>' +
+    '<table><thead>' + projSumHeader + '</thead><tbody>' + projSumRows + '</tbody></table>' +
     '<h2>맨파워 배분</h2>' +
     '<table><thead>' + mpHeader + '</thead><tbody>' + mpRows + '</tbody></table>' +
     '<h2>출장 현황</h2>' +
