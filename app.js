@@ -2129,27 +2129,77 @@ function printMonthlyStats() {
 
   // ── 프로젝트별 직종 투입 요약 HTML ──
   const mpCats2 = ['제관사', '용접사', '보조사', '가공', '구동부'];
+  const CHART_COLORS = ['#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f','#edc948','#b07aa1','#ff9da7','#9c755f','#bab0ac'];
+
+  const projChartData = usedProjs.map((proj, i) => {
+    const catDays = {};
+    mpCats2.forEach(cat => { catDays[cat] = 0; });
+    let totalDays = 0;
+    Object.values(mpByEmp).forEach(d => {
+      const days = d.projects[String(proj.id)] || 0;
+      if (days === 0) return;
+      const cat = DIV_TO_MP[d.emp.div];
+      if (cat && catDays[cat] !== undefined) catDays[cat] += days;
+      totalDays += days;
+    });
+    return { name: proj.client, code: proj.code, totalDays, catDays, color: CHART_COLORS[i % CHART_COLORS.length] };
+  });
+
+  const grandTotal = projChartData.reduce((s, p) => s + p.totalDays, 0);
+
   const projSumHeader = '<tr><th>프로젝트</th>' + mpCats2.map(c => '<th>' + c + '</th>').join('') + '<th>합계(인·일)</th></tr>';
-  const projSumRows = usedProjs.length === 0
+  const projSumRows = projChartData.length === 0
     ? '<tr><td colspan="' + (2 + mpCats2.length) + '" style="text-align:center;color:#999;">데이터 없음</td></tr>'
-    : usedProjs.map(proj => {
-        const catDays = {};
-        mpCats2.forEach(cat => { catDays[cat] = 0; });
-        let totalDays = 0;
-        Object.values(mpByEmp).forEach(d => {
-          const days = d.projects[String(proj.id)] || 0;
-          if (days === 0) return;
-          const cat = DIV_TO_MP[d.emp.div];
-          if (cat && catDays[cat] !== undefined) catDays[cat] += days;
-          totalDays += days;
-        });
-        let row = '<tr><td style="font-weight:700;">' + proj.client + (proj.code ? ' (' + proj.code + ')' : '') + '</td>';
+    : projChartData.map(({ name, code, totalDays, catDays, color }) => {
+        const pct = grandTotal > 0 ? Math.round(totalDays / grandTotal * 100) : 0;
+        let row = '<tr><td style="font-weight:700;"><span style="display:inline-block;width:10px;height:10px;background:' + color + ';border-radius:2px;margin-right:5px;vertical-align:middle;"></span>' + name + (code ? ' (' + code + ')' : '') + '</td>';
         mpCats2.forEach(cat => {
           row += '<td style="text-align:center;">' + (catDays[cat] > 0 ? catDays[cat] : '—') + '</td>';
         });
-        row += '<td style="text-align:center;font-weight:700;">' + totalDays + '</td></tr>';
+        row += '<td style="text-align:center;font-weight:700;">' + totalDays + (grandTotal > 0 ? ' (' + pct + '%)' : '') + '</td></tr>';
         return row;
       }).join('');
+
+  // ── 파이 차트 SVG ──
+  let pieSVG = '';
+  let pieLegend = '';
+  if (grandTotal > 0) {
+    const cx = 150, cy = 150, r = 130;
+    let angle = -Math.PI / 2;
+    let svgPaths = '';
+    projChartData.forEach(item => {
+      if (item.totalDays === 0) return;
+      const pct = item.totalDays / grandTotal;
+      const sa = angle;
+      angle += pct * 2 * Math.PI;
+      const ea = angle;
+      const x1 = (cx + r * Math.cos(sa)).toFixed(2);
+      const y1 = (cy + r * Math.sin(sa)).toFixed(2);
+      const x2 = (cx + r * Math.cos(ea)).toFixed(2);
+      const y2 = (cy + r * Math.sin(ea)).toFixed(2);
+      const large = pct > 0.5 ? 1 : 0;
+      svgPaths += '<path d="M' + cx + ',' + cy + ' L' + x1 + ',' + y1 + ' A' + r + ',' + r + ' 0 ' + large + ',1 ' + x2 + ',' + y2 + ' Z" fill="' + item.color + '" stroke="white" stroke-width="2"/>';
+      if (pct > 0.04) {
+        const ma = sa + pct * Math.PI;
+        const lx = (cx + r * 0.65 * Math.cos(ma)).toFixed(1);
+        const ly = (cy + r * 0.65 * Math.sin(ma)).toFixed(1);
+        svgPaths += '<text x="' + lx + '" y="' + ly + '" text-anchor="middle" dominant-baseline="middle" font-size="11" fill="white" font-weight="bold">' + Math.round(pct * 100) + '%</text>';
+      }
+      pieLegend += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:7px;">' +
+        '<span style="width:13px;height:13px;background:' + item.color + ';display:inline-block;border-radius:2px;flex-shrink:0;"></span>' +
+        '<span style="font-size:9pt;">' + item.name + (item.code ? ' (' + item.code + ')' : '') + ': <strong>' + item.totalDays + '인·일</strong> (' + Math.round(pct * 100) + '%)</span>' +
+        '</div>';
+    });
+    pieSVG = '<svg width="300" height="300" xmlns="http://www.w3.org/2000/svg">' + svgPaths + '</svg>';
+  } else {
+    pieSVG = '<p style="color:#999;text-align:center;padding:60px 0;">데이터 없음</p>';
+  }
+
+  const pieChartHtml =
+    '<div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap;margin-bottom:12px;">' +
+    pieSVG +
+    '<div>' + pieLegend + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #ddd;font-size:9pt;color:#333;">전체 합계: <strong>' + grandTotal + '인·일</strong></div></div>' +
+    '</div>';
 
   // ── 출장 HTML ──
   const tripRows = Object.entries(tripSummary).sort((a, b) => b[1].days - a[1].days)
@@ -2197,8 +2247,8 @@ function printMonthlyStats() {
     '<table><thead><tr><th>날짜</th><th>요일</th><th>출근 인원</th></tr></thead><tbody>' + swRows + '</tbody></table>' +
     '<h2>프로젝트별 직종 투입 요약</h2>' +
     '<table><thead>' + projSumHeader + '</thead><tbody>' + projSumRows + '</tbody></table>' +
-    '<h2>맨파워 배분</h2>' +
-    '<table><thead>' + mpHeader + '</thead><tbody>' + mpRows + '</tbody></table>' +
+    '<h2>프로젝트별 투입 비율</h2>' +
+    pieChartHtml +
     '<h2>출장 현황</h2>' +
     '<table><thead><tr><th>현장</th><th>인원</th><th>맨데이</th><th>직원명</th></tr></thead><tbody>' + tripRows + '</tbody></table>' +
     '<script>window.onload=function(){window.print();}<\/script>' +
