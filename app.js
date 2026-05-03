@@ -1743,8 +1743,9 @@ function renderStats() {
         if (isOnTrip) {
           const proj = state.projects.find(p => String(p.id) === String(ed.projId));
           const place = proj ? proj.client : (ed.trip || '출장');
-          if (!tripSummary[place]) tripSummary[place] = new Set();
-          tripSummary[place].add(emp.name);
+          if (!tripSummary[place]) tripSummary[place] = { names: new Set(), days: 0 };
+          tripSummary[place].names.add(emp.name);
+          tripSummary[place].days++;
         }
 
         // 맨파워 집계
@@ -2002,11 +2003,12 @@ function _renderTripSection(tripSummary) {
   }
 
   tripTbody.innerHTML = Object.entries(tripSummary)
-    .sort((a, b) => b[1].size - a[1].size)
-    .map(([place, names]) =>
+    .sort((a, b) => b[1].days - a[1].days)
+    .map(([place, { names, days }]) =>
       '<tr>' +
       '<td><strong>' + place + '</strong></td>' +
       '<td style="color:var(--accent);font-family:var(--mono);font-weight:700;text-align:center;">' + names.size + '명</td>' +
+      '<td style="color:var(--yellow);font-family:var(--mono);font-weight:700;text-align:center;">' + days + '인·일</td>' +
       '<td style="color:var(--text2)">' + [...names].join(', ') + '</td>' +
       '</tr>'
     ).join('');
@@ -2061,8 +2063,9 @@ function printMonthlyStats() {
       if (isOnTrip) {
         const proj = state.projects.find(p => String(p.id) === String(ed.projId));
         const place = proj ? proj.client : (ed.trip || '출장');
-        if (!tripSummary[place]) tripSummary[place] = new Set();
-        tripSummary[place].add(emp.name);
+        if (!tripSummary[place]) tripSummary[place] = { names: new Set(), days: 0 };
+        tripSummary[place].names.add(emp.name);
+        tripSummary[place].days++;
       }
 
       if (!mpByEmp[emp.id]) mpByEmp[emp.id] = { emp, workDays: 0, projects: {}, unassigned: 0 };
@@ -2149,12 +2152,13 @@ function printMonthlyStats() {
       }).join('');
 
   // ── 출장 HTML ──
-  const tripRows = Object.entries(tripSummary).sort((a, b) => b[1].size - a[1].size)
-    .map(([place, names]) =>
+  const tripRows = Object.entries(tripSummary).sort((a, b) => b[1].days - a[1].days)
+    .map(([place, { names, days }]) =>
       '<tr><td><strong>' + place + '</strong></td>' +
       '<td style="text-align:center;">' + names.size + '명</td>' +
+      '<td style="text-align:center;font-weight:700;">' + days + '인·일</td>' +
       '<td>' + [...names].join(', ') + '</td></tr>'
-    ).join('') || '<tr><td colspan="3" style="text-align:center;color:#999;">출장 데이터 없음</td></tr>';
+    ).join('') || '<tr><td colspan="4" style="text-align:center;color:#999;">출장 데이터 없음</td></tr>';
 
   const css = [
     '* { margin:0; padding:0; box-sizing:border-box; }',
@@ -2196,7 +2200,7 @@ function printMonthlyStats() {
     '<h2>맨파워 배분</h2>' +
     '<table><thead>' + mpHeader + '</thead><tbody>' + mpRows + '</tbody></table>' +
     '<h2>출장 현황</h2>' +
-    '<table><thead><tr><th>현장</th><th>인원</th><th>직원명</th></tr></thead><tbody>' + tripRows + '</tbody></table>' +
+    '<table><thead><tr><th>현장</th><th>인원</th><th>맨데이</th><th>직원명</th></tr></thead><tbody>' + tripRows + '</tbody></table>' +
     '<script>window.onload=function(){window.print();}<\/script>' +
     '</body></html>';
 
@@ -2271,8 +2275,9 @@ function exportMonthlyExcel() {
         if (isOnTrip) {
           const proj = state.projects.find(p => String(p.id) === String(ed.projId));
           const place = proj ? proj.client : (ed.trip || '출장');
-          if (!tripSummary[place]) tripSummary[place] = new Set();
-          tripSummary[place].add(emp.name);
+          if (!tripSummary[place]) tripSummary[place] = { names: new Set(), days: 0 };
+          tripSummary[place].names.add(emp.name);
+          tripSummary[place].days++;
         }
 
         if (!mpByEmp[emp.id]) mpByEmp[emp.id] = { emp, workDays: 0, projects: {}, unassigned: 0 };
@@ -2345,9 +2350,10 @@ function exportMonthlyExcel() {
     XLSX.utils.book_append_sheet(wb, ws3, '맨파워배분');
 
     // ── 시트4: 출장현황 ──
-    const tripRows2 = Object.entries(tripSummary).sort((a, b) => b[1].size - a[1].size).map(([place, names]) => ({
+    const tripRows2 = Object.entries(tripSummary).sort((a, b) => b[1].days - a[1].days).map(([place, { names, days }]) => ({
       현장: place,
       인원수: names.size,
+      맨데이: days,
       직원명단: [...names].join(', ')
     }));
     if (tripRows2.length === 0) tripRows2.push({ 현장: '데이터 없음', 인원수: '', 직원명단: '' });
