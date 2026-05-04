@@ -2008,7 +2008,7 @@ function _renderTripSection(tripSummary) {
       '<tr>' +
       '<td><strong>' + place + '</strong></td>' +
       '<td style="color:var(--accent);font-family:var(--mono);font-weight:700;text-align:center;">' + names.size + '명</td>' +
-      '<td style="color:var(--yellow);font-family:var(--mono);font-weight:700;text-align:center;">' + days + '인·일</td>' +
+      '<td style="color:var(--yellow);font-family:var(--mono);font-weight:700;text-align:center;">' + days + '일</td>' +
       '<td style="color:var(--text2)">' + [...names].join(', ') + '</td>' +
       '</tr>'
     ).join('');
@@ -2147,7 +2147,7 @@ function printMonthlyStats() {
 
   const grandTotal = projChartData.reduce((s, p) => s + p.totalDays, 0);
 
-  const projSumHeader = '<tr><th>프로젝트</th>' + mpCats2.map(c => '<th>' + c + '</th>').join('') + '<th>합계(인·일)</th></tr>';
+  const projSumHeader = '<tr><th>프로젝트</th>' + mpCats2.map(c => '<th>' + c + '</th>').join('') + '<th>합계(일)</th></tr>';
   const projSumRows = projChartData.length === 0
     ? '<tr><td colspan="' + (2 + mpCats2.length) + '" style="text-align:center;color:#999;">데이터 없음</td></tr>'
     : projChartData.map(({ name, code, totalDays, catDays, color }) => {
@@ -2191,7 +2191,7 @@ function printMonthlyStats() {
       }
       pieLegend += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:7px;">' +
         '<span style="width:13px;height:13px;background:' + item.color + ';display:inline-block;border-radius:2px;flex-shrink:0;"></span>' +
-        '<span style="font-size:9pt;">' + item.name + (item.code ? ' (' + item.code + ')' : '') + ': <strong>' + item.totalDays + '인·일</strong> (' + Math.round(pct * 100) + '%)</span>' +
+        '<span style="font-size:9pt;">' + item.name + (item.code ? ' (' + item.code + ')' : '') + ': <strong>' + item.totalDays + '일</strong> (' + Math.round(pct * 100) + '%)</span>' +
         '</div>';
     });
     pieSVG = '<svg width="300" height="300" xmlns="http://www.w3.org/2000/svg">' + svgPaths + '</svg>';
@@ -2202,7 +2202,7 @@ function printMonthlyStats() {
   const pieChartHtml =
     '<div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap;margin-bottom:12px;">' +
     pieSVG +
-    '<div>' + pieLegend + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #ddd;font-size:9pt;color:#333;">전체 합계: <strong>' + grandTotal + '인·일</strong></div></div>' +
+    '<div>' + pieLegend + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #ddd;font-size:9pt;color:#333;">전체 합계: <strong>' + grandTotal + '일</strong></div></div>' +
     '</div>';
 
   // ── 출장 HTML ──
@@ -2210,7 +2210,7 @@ function printMonthlyStats() {
     .map(([place, { names, days }]) =>
       '<tr><td><strong>' + place + '</strong></td>' +
       '<td style="text-align:center;">' + names.size + '명</td>' +
-      '<td style="text-align:center;font-weight:700;">' + days + '인·일</td>' +
+      '<td style="text-align:center;font-weight:700;">' + days + '일</td>' +
       '<td>' + [...names].join(', ') + '</td></tr>'
     ).join('') || '<tr><td colspan="4" style="text-align:center;color:#999;">출장 데이터 없음</td></tr>';
 
@@ -2224,12 +2224,16 @@ function printMonthlyStats() {
     '.s-card { border:1px solid #ddd; border-radius:4px; padding:8px 14px; text-align:center; }',
     '.s-val { font-size:18pt; font-weight:900; }',
     '.s-lbl { font-size:8pt; color:#555; }',
-    'table { width:100%; border-collapse:collapse; margin-bottom:12px; font-size:9pt; }',
+    'table { width:100%; border-collapse:collapse; margin-bottom:12px; font-size:9pt; page-break-inside:auto; }',
     'th { background:#333; color:#fff; padding:5px 8px; text-align:center; }',
     'td { padding:4px 8px; border:1px solid #ccc; vertical-align:middle; }',
+    'tr { page-break-inside:avoid; page-break-after:auto; }',
     'tr:nth-child(even) td { background:#f8f8f8; }',
+    'h2 + table { page-break-inside:avoid; }',
+    '.section { page-break-inside:avoid; }',
+    '.pie-wrap { page-break-inside:avoid; }',
     '@page { margin:12mm; size:A4 portrait; }',
-    '@media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }'
+    '@media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } h2 { page-break-after:avoid; } }'
   ].join('\n');
 
   const html = '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">' +
@@ -2245,16 +2249,16 @@ function printMonthlyStats() {
       '<div class="s-card"><div class="s-val">' + totalAbsent + '</div><div class="s-lbl">결근·연차</div></div>' +
       (totalHalfDay > 0 ? '<div class="s-card"><div class="s-val">' + totalHalfDay + '회</div><div class="s-lbl">반차(' + totalHalfDayH + 'h)</div></div>' : '') +
     '</div>' +
-    '<h2>잔업 현황</h2>' +
-    '<table><thead><tr><th>이름</th><th>직종</th><th>일수</th><th>시간</th></tr></thead><tbody>' + otRows + '</tbody></table>' +
-    '<h2>특근 현황 (토·일)</h2>' +
-    '<table><thead><tr><th>날짜</th><th>요일</th><th>출근 인원</th></tr></thead><tbody>' + swRows + '</tbody></table>' +
-    '<h2>프로젝트별 직종 투입 요약</h2>' +
-    '<table><thead>' + projSumHeader + '</thead><tbody>' + projSumRows + '</tbody></table>' +
-    '<h2>프로젝트별 투입 비율</h2>' +
-    pieChartHtml +
-    '<h2>출장 현황</h2>' +
-    '<table><thead><tr><th>현장</th><th>인원</th><th>맨데이</th><th>직원명</th></tr></thead><tbody>' + tripRows + '</tbody></table>' +
+    '<div class="section"><h2>잔업 현황</h2>' +
+    '<table><thead><tr><th>이름</th><th>직종</th><th>일수</th><th>시간</th></tr></thead><tbody>' + otRows + '</tbody></table></div>' +
+    '<div class="section"><h2>특근 현황 (토·일)</h2>' +
+    '<table><thead><tr><th>날짜</th><th>요일</th><th>출근 인원</th></tr></thead><tbody>' + swRows + '</tbody></table></div>' +
+    '<div class="section"><h2>프로젝트별 직종 투입 요약</h2>' +
+    '<table><thead>' + projSumHeader + '</thead><tbody>' + projSumRows + '</tbody></table></div>' +
+    '<div class="section pie-wrap"><h2>프로젝트별 투입 비율</h2>' +
+    pieChartHtml + '</div>' +
+    '<div class="section"><h2>출장 현황</h2>' +
+    '<table><thead><tr><th>현장</th><th>인원</th><th>맨데이</th><th>직원명</th></tr></thead><tbody>' + tripRows + '</tbody></table></div>' +
     '<script>window.onload=function(){window.print();}<\/script>' +
     '</body></html>';
 
