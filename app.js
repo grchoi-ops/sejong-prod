@@ -189,6 +189,7 @@ function setupTabs() {
       if (tab === 'wo')        loadWoData();
       if (tab === 'purchase')  pr_init();
       if (tab === 'manday')    md_initTab();
+      if (tab === 'overtime')  ot_init();
       checkAlerts();
     });
   });
