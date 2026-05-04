@@ -744,7 +744,7 @@ function ot_addRow() {
   let projOpts = '';
   if (typeof state !== 'undefined' && state.projects) {
     state.projects.filter(p => !p.done).forEach(p => {
-      projOpts += `<option value="${p.code}">`;
+      projOpts += `<option value="${p.code}">${p.code}${p.client ? ' – ' + p.client : ''}</option>`;
     });
   }
 
