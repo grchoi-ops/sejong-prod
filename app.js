@@ -2259,6 +2259,8 @@ function printMonthlyStats() {
     '<table><thead><tr><th>날짜</th><th>요일</th><th>출근 인원</th></tr></thead><tbody>' + swRows + '</tbody></table></div>' +
     '<div class="section"><h2>출장 현황</h2>' +
     '<table><thead><tr><th>현장</th><th>인원</th><th>맨데이</th><th>직원명</th></tr></thead><tbody>' + tripRows + '</tbody></table></div>' +
+    '<div class="section"><h2>인원별 프로젝트 배분</h2>' +
+    '<table><thead>' + mpHeader + '</thead><tbody>' + mpRows + '</tbody></table></div>' +
     '<script>window.onload=function(){window.print();}<\/script>' +
     '</body></html>';
 
