@@ -25,6 +25,40 @@ const DIV_TO_MP = {
 };
 const DAYS_KO = ['일','월','화','수','목','금','토'];
 
+// ──────────────────────────────────────────────
+//  한국 법정 공휴일 목록 (매년 1월에 해당 연도 추가)
+//  토·일은 이미 isWeekend 로 처리되므로 포함해도 무방
+// ──────────────────────────────────────────────
+const KR_HOLIDAYS = new Set([
+  // 2025
+  '2025-01-01',                                     // 신정
+  '2025-01-28','2025-01-29','2025-01-30',           // 설날 연휴
+  '2025-03-01','2025-03-03',                        // 삼일절 + 대체
+  '2025-05-05','2025-05-06',                        // 어린이날·부처님오신날 + 대체
+  '2025-06-06',                                     // 현충일
+  '2025-08-15',                                     // 광복절
+  '2025-10-03',                                     // 개천절
+  '2025-10-05','2025-10-06','2025-10-07','2025-10-08', // 추석 연휴 + 대체
+  '2025-10-09',                                     // 한글날
+  '2025-12-25',                                     // 성탄절
+
+  // 2026
+  '2026-01-01',                                     // 신정
+  '2026-02-16','2026-02-17','2026-02-18',           // 설날 연휴
+  '2026-03-01','2026-03-02',                        // 삼일절 + 대체
+  '2026-05-05',                                     // 어린이날
+  '2026-05-24','2026-05-25',                        // 부처님오신날 + 대체
+  '2026-06-06','2026-06-08',                        // 현충일 + 대체
+  '2026-08-15','2026-08-17',                        // 광복절 + 대체
+  '2026-09-24','2026-09-25','2026-09-26','2026-09-28', // 추석 연휴 + 대체
+  '2026-10-03','2026-10-05',                        // 개천절 + 대체
+  '2026-10-09',                                     // 한글날
+  '2026-12-25',                                     // 성탄절
+]);
+
+/** 해당 날짜가 법정 공휴일인지 확인 */
+function isHoliday(dateStr) { return KR_HOLIDAYS.has(dateStr); }
+
 let state = {
   employees: [],
   projects: [],
@@ -1703,6 +1737,7 @@ function renderStats() {
 
     const dow = new Date(dateStr + 'T00:00:00').getDay(); // 0=일, 6=토
     const isWeekend = (dow === 0 || dow === 6);
+    const isSpecialDay = isWeekend || isHoliday(dateStr); // 토·일 + 공휴일
     const specialPresentNames = [];
 
     state.employees.forEach(emp => {
@@ -1736,8 +1771,8 @@ function renderStats() {
           otByEmp[emp.id].hours += otH;
         }
 
-        // 특근 (토·일)
-        if (isWeekend) specialPresentNames.push(emp.name);
+        // 특근 (토·일·공휴일)
+        if (isSpecialDay) specialPresentNames.push(emp.name);
 
         // 출장
         const isOnTrip = ed.onTrip || ed.trip;
@@ -1765,7 +1800,7 @@ function renderStats() {
     totalPresent += dayPresent;
     totalAbsent  += dayAbsent;
 
-    if (isWeekend && specialPresentNames.length > 0) {
+    if (isSpecialDay && specialPresentNames.length > 0) {
       specialWorkDates.push({ date: dateStr, dow, names: specialPresentNames });
     }
   }
@@ -2040,6 +2075,7 @@ function printMonthlyStats() {
     dayCount++;
     const dow = new Date(dateStr + 'T00:00:00').getDay();
     const isWeekend = (dow === 0 || dow === 6);
+    const isSpecialDay = isWeekend || isHoliday(dateStr); // 토·일 + 공휴일
     const specialNames = [];
 
     state.employees.forEach(emp => {
@@ -2058,7 +2094,7 @@ function printMonthlyStats() {
         otByEmp[emp.id].days++;
         otByEmp[emp.id].hours += otH;
       }
-      if (isWeekend) specialNames.push(emp.name);
+      if (isSpecialDay) specialNames.push(emp.name);
 
       const isOnTrip = ed.onTrip || ed.trip;
       if (isOnTrip) {
@@ -2081,7 +2117,7 @@ function printMonthlyStats() {
     });
 
     totalPresent += dayPresent;
-    if (isWeekend && specialNames.length > 0) {
+    if (isSpecialDay && specialNames.length > 0) {
       specialWorkDates.push({ date: dateStr, dow, names: specialNames });
     }
   }
@@ -2296,6 +2332,7 @@ function exportMonthlyExcel() {
     const data = state.dailyData[dateStr];
     const dow  = new Date(dateStr + 'T00:00:00').getDay();
     const isWeekend = (dow === 0 || dow === 6);
+    const isSpecialDay = isWeekend || isHoliday(dateStr); // 토·일 + 공휴일
     const specialNames = [];
 
     if (!data) {
@@ -2328,7 +2365,7 @@ function exportMonthlyExcel() {
           otByEmp[emp.id].days++;
           otByEmp[emp.id].hours += otH;
         }
-        if (isWeekend) specialNames.push(emp.name);
+        if (isSpecialDay) specialNames.push(emp.name);
 
         const isOnTrip = ed.onTrip || ed.trip;
         if (isOnTrip) {
@@ -2349,7 +2386,7 @@ function exportMonthlyExcel() {
           mpByEmp[emp.id].unassigned += wu;
         }
       });
-      if (isWeekend && specialNames.length > 0) {
+      if (isSpecialDay && specialNames.length > 0) {
         specialWorkDates.push({ date: dateStr, dow, names: specialNames });
       }
     }
