@@ -2164,7 +2164,7 @@ function printMonthlyStats() {
   let pieSVG = '';
   let pieLegend = '';
   if (grandTotal > 0) {
-    const cx = 110, cy = 110, r = 95;
+    const cx = 180, cy = 180, r = 160;
     let angle = -Math.PI / 2;
     let svgPaths = '';
     projChartData.forEach(item => {
@@ -2185,8 +2185,8 @@ function printMonthlyStats() {
         const ly = parseFloat((cy + r * 0.65 * Math.sin(ma)).toFixed(1));
         const shortName = item.name.length > 7 ? item.name.slice(0, 6) + '…' : item.name;
         svgPaths += '<text text-anchor="middle" fill="white" font-weight="bold">' +
-          '<tspan x="' + lx + '" y="' + (ly - 6) + '" font-size="9">' + shortName + '</tspan>' +
-          '<tspan x="' + lx + '" dy="13" font-size="10">' + Math.round(pct * 100) + '%</tspan>' +
+          '<tspan x="' + lx + '" y="' + (ly - 8) + '" font-size="11">' + shortName + '</tspan>' +
+          '<tspan x="' + lx + '" dy="16" font-size="13">' + Math.round(pct * 100) + '%</tspan>' +
           '</text>';
       }
       pieLegend += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">' +
@@ -2194,7 +2194,7 @@ function printMonthlyStats() {
         '<span style="font-size:8.5pt;">' + item.name + (item.code ? ' (' + item.code + ')' : '') + ': <strong>' + item.totalDays + '일</strong> (' + Math.round(pct * 100) + '%)</span>' +
         '</div>';
     });
-    pieSVG = '<svg width="220" height="220" xmlns="http://www.w3.org/2000/svg">' + svgPaths + '</svg>';
+    pieSVG = '<svg width="360" height="360" xmlns="http://www.w3.org/2000/svg">' + svgPaths + '</svg>';
   } else {
     pieSVG = '<p style="color:#999;text-align:center;padding:60px 0;">데이터 없음</p>';
   }
@@ -2230,7 +2230,7 @@ function printMonthlyStats() {
     'tr { break-inside:avoid; page-break-inside:avoid; }',
     'tr:nth-child(even) td { background:#f8f8f8; }',
     '.section { break-inside:avoid; page-break-inside:avoid; }',
-    '.pie-wrap { break-inside:avoid; page-break-inside:avoid; break-before:auto; }',
+    '.pie-wrap { break-inside:avoid; page-break-inside:avoid; break-before:page; page-break-before:always; }',
     'h2 { break-after:avoid; page-break-after:avoid; }',
     '@page { margin:12mm; size:A4 portrait; }',
     '@media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }'
