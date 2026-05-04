@@ -1743,9 +1743,9 @@ function renderStats() {
         if (isOnTrip) {
           const proj = state.projects.find(p => String(p.id) === String(ed.projId));
           const place = proj ? proj.client : (ed.trip || '출장');
-          if (!tripSummary[place]) tripSummary[place] = { names: new Set(), days: 0 };
-          tripSummary[place].names.add(emp.name);
-          tripSummary[place].days++;
+          if (!tripSummary[place]) tripSummary[place] = { empDays: {}, totalDays: 0 };
+          tripSummary[place].empDays[emp.name] = (tripSummary[place].empDays[emp.name] || 0) + 1;
+          tripSummary[place].totalDays++;
         }
 
         // 맨파워 집계
@@ -2003,13 +2003,13 @@ function _renderTripSection(tripSummary) {
   }
 
   tripTbody.innerHTML = Object.entries(tripSummary)
-    .sort((a, b) => b[1].days - a[1].days)
-    .map(([place, { names, days }]) =>
+    .sort((a, b) => b[1].totalDays - a[1].totalDays)
+    .map(([place, { empDays, totalDays }]) =>
       '<tr>' +
       '<td><strong>' + place + '</strong></td>' +
-      '<td style="color:var(--accent);font-family:var(--mono);font-weight:700;text-align:center;">' + names.size + '명</td>' +
-      '<td style="color:var(--yellow);font-family:var(--mono);font-weight:700;text-align:center;">' + days + '일</td>' +
-      '<td style="color:var(--text2)">' + [...names].join(', ') + '</td>' +
+      '<td style="color:var(--accent);font-family:var(--mono);font-weight:700;text-align:center;">' + Object.keys(empDays).length + '명</td>' +
+      '<td style="color:var(--yellow);font-family:var(--mono);font-weight:700;text-align:center;">' + totalDays + '일</td>' +
+      '<td style="color:var(--text2)">' + Object.entries(empDays).map(([n, d]) => n + '(' + d + '일)').join(', ') + '</td>' +
       '</tr>'
     ).join('');
 }
@@ -2063,9 +2063,9 @@ function printMonthlyStats() {
       if (isOnTrip) {
         const proj = state.projects.find(p => String(p.id) === String(ed.projId));
         const place = proj ? proj.client : (ed.trip || '출장');
-        if (!tripSummary[place]) tripSummary[place] = { names: new Set(), days: 0 };
-        tripSummary[place].names.add(emp.name);
-        tripSummary[place].days++;
+        if (!tripSummary[place]) tripSummary[place] = { empDays: {}, totalDays: 0 };
+        tripSummary[place].empDays[emp.name] = (tripSummary[place].empDays[emp.name] || 0) + 1;
+        tripSummary[place].totalDays++;
       }
 
       if (!mpByEmp[emp.id]) mpByEmp[emp.id] = { emp, workDays: 0, projects: {}, unassigned: 0 };
@@ -2206,12 +2206,12 @@ function printMonthlyStats() {
     '</div>';
 
   // ── 출장 HTML ──
-  const tripRows = Object.entries(tripSummary).sort((a, b) => b[1].days - a[1].days)
-    .map(([place, { names, days }]) =>
+  const tripRows = Object.entries(tripSummary).sort((a, b) => b[1].totalDays - a[1].totalDays)
+    .map(([place, { empDays, totalDays }]) =>
       '<tr><td><strong>' + place + '</strong></td>' +
-      '<td style="text-align:center;">' + names.size + '명</td>' +
-      '<td style="text-align:center;font-weight:700;">' + days + '일</td>' +
-      '<td>' + [...names].join(', ') + '</td></tr>'
+      '<td style="text-align:center;">' + Object.keys(empDays).length + '명</td>' +
+      '<td style="text-align:center;font-weight:700;">' + totalDays + '일</td>' +
+      '<td>' + Object.entries(empDays).map(([n, d]) => n + '(' + d + '일)').join(', ') + '</td></tr>'
     ).join('') || '<tr><td colspan="4" style="text-align:center;color:#999;">출장 데이터 없음</td></tr>';
 
   const css = [
@@ -2230,7 +2230,7 @@ function printMonthlyStats() {
     'tr { break-inside:avoid; page-break-inside:avoid; }',
     'tr:nth-child(even) td { background:#f8f8f8; }',
     '.section { break-inside:avoid; page-break-inside:avoid; }',
-    '.pie-wrap { break-inside:avoid; page-break-inside:avoid; break-before:page; page-break-before:always; }',
+    '.pie-wrap { break-inside:avoid; page-break-inside:avoid; }',
     'h2 { break-after:avoid; page-break-after:avoid; }',
     '@page { margin:12mm; size:A4 portrait; }',
     '@media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }'
@@ -2249,14 +2249,14 @@ function printMonthlyStats() {
       '<div class="s-card"><div class="s-val">' + totalAbsent + '</div><div class="s-lbl">결근·연차</div></div>' +
       (totalHalfDay > 0 ? '<div class="s-card"><div class="s-val">' + totalHalfDay + '회</div><div class="s-lbl">반차(' + totalHalfDayH + 'h)</div></div>' : '') +
     '</div>' +
+    '<div class="section pie-wrap"><h2>프로젝트별 투입 비율</h2>' +
+    pieChartHtml + '</div>' +
+    '<div class="section"><h2>프로젝트별 직종 투입 요약</h2>' +
+    '<table><thead>' + projSumHeader + '</thead><tbody>' + projSumRows + '</tbody></table></div>' +
     '<div class="section"><h2>잔업 현황</h2>' +
     '<table><thead><tr><th>이름</th><th>직종</th><th>일수</th><th>시간</th></tr></thead><tbody>' + otRows + '</tbody></table></div>' +
     '<div class="section"><h2>특근 현황 (토·일)</h2>' +
     '<table><thead><tr><th>날짜</th><th>요일</th><th>출근 인원</th></tr></thead><tbody>' + swRows + '</tbody></table></div>' +
-    '<div class="section"><h2>프로젝트별 직종 투입 요약</h2>' +
-    '<table><thead>' + projSumHeader + '</thead><tbody>' + projSumRows + '</tbody></table></div>' +
-    '<div class="section pie-wrap"><h2>프로젝트별 투입 비율</h2>' +
-    pieChartHtml + '</div>' +
     '<div class="section"><h2>출장 현황</h2>' +
     '<table><thead><tr><th>현장</th><th>인원</th><th>맨데이</th><th>직원명</th></tr></thead><tbody>' + tripRows + '</tbody></table></div>' +
     '<script>window.onload=function(){window.print();}<\/script>' +
@@ -2333,9 +2333,9 @@ function exportMonthlyExcel() {
         if (isOnTrip) {
           const proj = state.projects.find(p => String(p.id) === String(ed.projId));
           const place = proj ? proj.client : (ed.trip || '출장');
-          if (!tripSummary[place]) tripSummary[place] = { names: new Set(), days: 0 };
-          tripSummary[place].names.add(emp.name);
-          tripSummary[place].days++;
+          if (!tripSummary[place]) tripSummary[place] = { empDays: {}, totalDays: 0 };
+          tripSummary[place].empDays[emp.name] = (tripSummary[place].empDays[emp.name] || 0) + 1;
+          tripSummary[place].totalDays++;
         }
 
         if (!mpByEmp[emp.id]) mpByEmp[emp.id] = { emp, workDays: 0, projects: {}, unassigned: 0 };
@@ -2408,11 +2408,11 @@ function exportMonthlyExcel() {
     XLSX.utils.book_append_sheet(wb, ws3, '맨파워배분');
 
     // ── 시트4: 출장현황 ──
-    const tripRows2 = Object.entries(tripSummary).sort((a, b) => b[1].days - a[1].days).map(([place, { names, days }]) => ({
+    const tripRows2 = Object.entries(tripSummary).sort((a, b) => b[1].totalDays - a[1].totalDays).map(([place, { empDays, totalDays }]) => ({
       현장: place,
-      인원수: names.size,
-      맨데이: days,
-      직원명단: [...names].join(', ')
+      인원수: Object.keys(empDays).length,
+      맨데이: totalDays,
+      직원명단: Object.entries(empDays).map(([n, d]) => n + '(' + d + '일)').join(', ')
     }));
     if (tripRows2.length === 0) tripRows2.push({ 현장: '데이터 없음', 인원수: '', 직원명단: '' });
     const ws4 = XLSX.utils.json_to_sheet(tripRows2);
