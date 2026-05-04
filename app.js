@@ -2164,7 +2164,7 @@ function printMonthlyStats() {
   let pieSVG = '';
   let pieLegend = '';
   if (grandTotal > 0) {
-    const cx = 150, cy = 150, r = 130;
+    const cx = 110, cy = 110, r = 95;
     let angle = -Math.PI / 2;
     let svgPaths = '';
     projChartData.forEach(item => {
@@ -2185,16 +2185,16 @@ function printMonthlyStats() {
         const ly = parseFloat((cy + r * 0.65 * Math.sin(ma)).toFixed(1));
         const shortName = item.name.length > 7 ? item.name.slice(0, 6) + '…' : item.name;
         svgPaths += '<text text-anchor="middle" fill="white" font-weight="bold">' +
-          '<tspan x="' + lx + '" y="' + (ly - 7) + '" font-size="10">' + shortName + '</tspan>' +
-          '<tspan x="' + lx + '" dy="15" font-size="11">' + Math.round(pct * 100) + '%</tspan>' +
+          '<tspan x="' + lx + '" y="' + (ly - 6) + '" font-size="9">' + shortName + '</tspan>' +
+          '<tspan x="' + lx + '" dy="13" font-size="10">' + Math.round(pct * 100) + '%</tspan>' +
           '</text>';
       }
-      pieLegend += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:7px;">' +
-        '<span style="width:13px;height:13px;background:' + item.color + ';display:inline-block;border-radius:2px;flex-shrink:0;"></span>' +
-        '<span style="font-size:9pt;">' + item.name + (item.code ? ' (' + item.code + ')' : '') + ': <strong>' + item.totalDays + '일</strong> (' + Math.round(pct * 100) + '%)</span>' +
+      pieLegend += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">' +
+        '<span style="width:12px;height:12px;background:' + item.color + ';display:inline-block;border-radius:2px;flex-shrink:0;"></span>' +
+        '<span style="font-size:8.5pt;">' + item.name + (item.code ? ' (' + item.code + ')' : '') + ': <strong>' + item.totalDays + '일</strong> (' + Math.round(pct * 100) + '%)</span>' +
         '</div>';
     });
-    pieSVG = '<svg width="300" height="300" xmlns="http://www.w3.org/2000/svg">' + svgPaths + '</svg>';
+    pieSVG = '<svg width="220" height="220" xmlns="http://www.w3.org/2000/svg">' + svgPaths + '</svg>';
   } else {
     pieSVG = '<p style="color:#999;text-align:center;padding:60px 0;">데이터 없음</p>';
   }
@@ -2224,16 +2224,16 @@ function printMonthlyStats() {
     '.s-card { border:1px solid #ddd; border-radius:4px; padding:8px 14px; text-align:center; }',
     '.s-val { font-size:18pt; font-weight:900; }',
     '.s-lbl { font-size:8pt; color:#555; }',
-    'table { width:100%; border-collapse:collapse; margin-bottom:12px; font-size:9pt; page-break-inside:auto; }',
+    'table { width:100%; border-collapse:collapse; margin-bottom:12px; font-size:9pt; }',
     'th { background:#333; color:#fff; padding:5px 8px; text-align:center; }',
     'td { padding:4px 8px; border:1px solid #ccc; vertical-align:middle; }',
-    'tr { page-break-inside:avoid; page-break-after:auto; }',
+    'tr { break-inside:avoid; page-break-inside:avoid; }',
     'tr:nth-child(even) td { background:#f8f8f8; }',
-    'h2 + table { page-break-inside:avoid; }',
-    '.section { page-break-inside:avoid; }',
-    '.pie-wrap { page-break-inside:avoid; }',
+    '.section { break-inside:avoid; page-break-inside:avoid; }',
+    '.pie-wrap { break-inside:avoid; page-break-inside:avoid; break-before:auto; }',
+    'h2 { break-after:avoid; page-break-after:avoid; }',
     '@page { margin:12mm; size:A4 portrait; }',
-    '@media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } h2 { page-break-after:avoid; } }'
+    '@media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }'
   ].join('\n');
 
   const html = '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">' +
