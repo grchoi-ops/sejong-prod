@@ -2179,11 +2179,15 @@ function printMonthlyStats() {
       const y2 = (cy + r * Math.sin(ea)).toFixed(2);
       const large = pct > 0.5 ? 1 : 0;
       svgPaths += '<path d="M' + cx + ',' + cy + ' L' + x1 + ',' + y1 + ' A' + r + ',' + r + ' 0 ' + large + ',1 ' + x2 + ',' + y2 + ' Z" fill="' + item.color + '" stroke="white" stroke-width="2"/>';
-      if (pct > 0.04) {
+      if (pct > 0.05) {
         const ma = sa + pct * Math.PI;
         const lx = (cx + r * 0.65 * Math.cos(ma)).toFixed(1);
-        const ly = (cy + r * 0.65 * Math.sin(ma)).toFixed(1);
-        svgPaths += '<text x="' + lx + '" y="' + ly + '" text-anchor="middle" dominant-baseline="middle" font-size="11" fill="white" font-weight="bold">' + Math.round(pct * 100) + '%</text>';
+        const ly = parseFloat((cy + r * 0.65 * Math.sin(ma)).toFixed(1));
+        const shortName = item.name.length > 7 ? item.name.slice(0, 6) + '…' : item.name;
+        svgPaths += '<text text-anchor="middle" fill="white" font-weight="bold">' +
+          '<tspan x="' + lx + '" y="' + (ly - 7) + '" font-size="10">' + shortName + '</tspan>' +
+          '<tspan x="' + lx + '" dy="15" font-size="11">' + Math.round(pct * 100) + '%</tspan>' +
+          '</text>';
       }
       pieLegend += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:7px;">' +
         '<span style="width:13px;height:13px;background:' + item.color + ';display:inline-block;border-radius:2px;flex-shrink:0;"></span>' +
