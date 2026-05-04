@@ -2008,7 +2008,7 @@ function _renderTripSection(tripSummary) {
       '<tr>' +
       '<td><strong>' + place + '</strong></td>' +
       '<td style="color:var(--accent);font-family:var(--mono);font-weight:700;text-align:center;">' + names.size + '명</td>' +
-      '<td style="color:var(--yellow);font-family:var(--mono);font-weight:700;text-align:center;">' + days + '인·일</td>' +
+      '<td style="color:var(--yellow);font-family:var(--mono);font-weight:700;text-align:center;">' + days + '일</td>' +
       '<td style="color:var(--text2)">' + [...names].join(', ') + '</td>' +
       '</tr>'
     ).join('');
@@ -2147,7 +2147,7 @@ function printMonthlyStats() {
 
   const grandTotal = projChartData.reduce((s, p) => s + p.totalDays, 0);
 
-  const projSumHeader = '<tr><th>프로젝트</th>' + mpCats2.map(c => '<th>' + c + '</th>').join('') + '<th>합계(인·일)</th></tr>';
+  const projSumHeader = '<tr><th>프로젝트</th>' + mpCats2.map(c => '<th>' + c + '</th>').join('') + '<th>합계(일)</th></tr>';
   const projSumRows = projChartData.length === 0
     ? '<tr><td colspan="' + (2 + mpCats2.length) + '" style="text-align:center;color:#999;">데이터 없음</td></tr>'
     : projChartData.map(({ name, code, totalDays, catDays, color }) => {
@@ -2164,7 +2164,7 @@ function printMonthlyStats() {
   let pieSVG = '';
   let pieLegend = '';
   if (grandTotal > 0) {
-    const cx = 150, cy = 150, r = 130;
+    const cx = 110, cy = 110, r = 95;
     let angle = -Math.PI / 2;
     let svgPaths = '';
     projChartData.forEach(item => {
@@ -2185,16 +2185,16 @@ function printMonthlyStats() {
         const ly = parseFloat((cy + r * 0.65 * Math.sin(ma)).toFixed(1));
         const shortName = item.name.length > 7 ? item.name.slice(0, 6) + '…' : item.name;
         svgPaths += '<text text-anchor="middle" fill="white" font-weight="bold">' +
-          '<tspan x="' + lx + '" y="' + (ly - 7) + '" font-size="10">' + shortName + '</tspan>' +
-          '<tspan x="' + lx + '" dy="15" font-size="11">' + Math.round(pct * 100) + '%</tspan>' +
+          '<tspan x="' + lx + '" y="' + (ly - 6) + '" font-size="9">' + shortName + '</tspan>' +
+          '<tspan x="' + lx + '" dy="13" font-size="10">' + Math.round(pct * 100) + '%</tspan>' +
           '</text>';
       }
-      pieLegend += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:7px;">' +
-        '<span style="width:13px;height:13px;background:' + item.color + ';display:inline-block;border-radius:2px;flex-shrink:0;"></span>' +
-        '<span style="font-size:9pt;">' + item.name + (item.code ? ' (' + item.code + ')' : '') + ': <strong>' + item.totalDays + '인·일</strong> (' + Math.round(pct * 100) + '%)</span>' +
+      pieLegend += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">' +
+        '<span style="width:12px;height:12px;background:' + item.color + ';display:inline-block;border-radius:2px;flex-shrink:0;"></span>' +
+        '<span style="font-size:8.5pt;">' + item.name + (item.code ? ' (' + item.code + ')' : '') + ': <strong>' + item.totalDays + '일</strong> (' + Math.round(pct * 100) + '%)</span>' +
         '</div>';
     });
-    pieSVG = '<svg width="300" height="300" xmlns="http://www.w3.org/2000/svg">' + svgPaths + '</svg>';
+    pieSVG = '<svg width="220" height="220" xmlns="http://www.w3.org/2000/svg">' + svgPaths + '</svg>';
   } else {
     pieSVG = '<p style="color:#999;text-align:center;padding:60px 0;">데이터 없음</p>';
   }
@@ -2202,7 +2202,7 @@ function printMonthlyStats() {
   const pieChartHtml =
     '<div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap;margin-bottom:12px;">' +
     pieSVG +
-    '<div>' + pieLegend + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #ddd;font-size:9pt;color:#333;">전체 합계: <strong>' + grandTotal + '인·일</strong></div></div>' +
+    '<div>' + pieLegend + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #ddd;font-size:9pt;color:#333;">전체 합계: <strong>' + grandTotal + '일</strong></div></div>' +
     '</div>';
 
   // ── 출장 HTML ──
@@ -2210,7 +2210,7 @@ function printMonthlyStats() {
     .map(([place, { names, days }]) =>
       '<tr><td><strong>' + place + '</strong></td>' +
       '<td style="text-align:center;">' + names.size + '명</td>' +
-      '<td style="text-align:center;font-weight:700;">' + days + '인·일</td>' +
+      '<td style="text-align:center;font-weight:700;">' + days + '일</td>' +
       '<td>' + [...names].join(', ') + '</td></tr>'
     ).join('') || '<tr><td colspan="4" style="text-align:center;color:#999;">출장 데이터 없음</td></tr>';
 
@@ -2227,7 +2227,11 @@ function printMonthlyStats() {
     'table { width:100%; border-collapse:collapse; margin-bottom:12px; font-size:9pt; }',
     'th { background:#333; color:#fff; padding:5px 8px; text-align:center; }',
     'td { padding:4px 8px; border:1px solid #ccc; vertical-align:middle; }',
+    'tr { break-inside:avoid; page-break-inside:avoid; }',
     'tr:nth-child(even) td { background:#f8f8f8; }',
+    '.section { break-inside:avoid; page-break-inside:avoid; }',
+    '.pie-wrap { break-inside:avoid; page-break-inside:avoid; break-before:auto; }',
+    'h2 { break-after:avoid; page-break-after:avoid; }',
     '@page { margin:12mm; size:A4 portrait; }',
     '@media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }'
   ].join('\n');
@@ -2245,16 +2249,16 @@ function printMonthlyStats() {
       '<div class="s-card"><div class="s-val">' + totalAbsent + '</div><div class="s-lbl">결근·연차</div></div>' +
       (totalHalfDay > 0 ? '<div class="s-card"><div class="s-val">' + totalHalfDay + '회</div><div class="s-lbl">반차(' + totalHalfDayH + 'h)</div></div>' : '') +
     '</div>' +
-    '<h2>잔업 현황</h2>' +
-    '<table><thead><tr><th>이름</th><th>직종</th><th>일수</th><th>시간</th></tr></thead><tbody>' + otRows + '</tbody></table>' +
-    '<h2>특근 현황 (토·일)</h2>' +
-    '<table><thead><tr><th>날짜</th><th>요일</th><th>출근 인원</th></tr></thead><tbody>' + swRows + '</tbody></table>' +
-    '<h2>프로젝트별 직종 투입 요약</h2>' +
-    '<table><thead>' + projSumHeader + '</thead><tbody>' + projSumRows + '</tbody></table>' +
-    '<h2>프로젝트별 투입 비율</h2>' +
-    pieChartHtml +
-    '<h2>출장 현황</h2>' +
-    '<table><thead><tr><th>현장</th><th>인원</th><th>맨데이</th><th>직원명</th></tr></thead><tbody>' + tripRows + '</tbody></table>' +
+    '<div class="section"><h2>잔업 현황</h2>' +
+    '<table><thead><tr><th>이름</th><th>직종</th><th>일수</th><th>시간</th></tr></thead><tbody>' + otRows + '</tbody></table></div>' +
+    '<div class="section"><h2>특근 현황 (토·일)</h2>' +
+    '<table><thead><tr><th>날짜</th><th>요일</th><th>출근 인원</th></tr></thead><tbody>' + swRows + '</tbody></table></div>' +
+    '<div class="section"><h2>프로젝트별 직종 투입 요약</h2>' +
+    '<table><thead>' + projSumHeader + '</thead><tbody>' + projSumRows + '</tbody></table></div>' +
+    '<div class="section pie-wrap"><h2>프로젝트별 투입 비율</h2>' +
+    pieChartHtml + '</div>' +
+    '<div class="section"><h2>출장 현황</h2>' +
+    '<table><thead><tr><th>현장</th><th>인원</th><th>맨데이</th><th>직원명</th></tr></thead><tbody>' + tripRows + '</tbody></table></div>' +
     '<script>window.onload=function(){window.print();}<\/script>' +
     '</body></html>';
 
