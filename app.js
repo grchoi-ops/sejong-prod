@@ -2164,11 +2164,30 @@ function printMonthlyStats() {
   let pieSVG = '';
   let pieLegend = '';
   if (grandTotal > 0) {
+    // 10% 미만은 묶음 슬라이스로 처리
+    const majorItems = projChartData.filter(p => p.totalDays > 0 && p.totalDays / grandTotal >= 0.1);
+    const minorItems = projChartData.filter(p => p.totalDays > 0 && p.totalDays / grandTotal < 0.1);
+    const minorTotal = minorItems.reduce((s, p) => s + p.totalDays, 0);
+
+    // 묶음 슬라이스 레이블: 미만 중 가장 큰 프로젝트 + "외 N종"
+    let minorLabel = '';
+    if (minorItems.length > 0) {
+      const topMinor = minorItems.reduce((a, b) => a.totalDays >= b.totalDays ? a : b);
+      const shortTop = topMinor.name.length > 7 ? topMinor.name.slice(0, 6) + '…' : topMinor.name;
+      minorLabel = minorItems.length === 1 ? shortTop : shortTop + ' 외 ' + (minorItems.length - 1) + '종';
+    }
+
+    // 차트에 그릴 슬라이스 목록
+    const chartSlices = [
+      ...majorItems,
+      ...(minorTotal > 0 ? [{ name: minorLabel, totalDays: minorTotal, color: '#aaaaaa', _isMinor: true }] : [])
+    ];
+
     const cx = 180, cy = 180, r = 160;
     let angle = -Math.PI / 2;
     let svgPaths = '';
-    projChartData.forEach(item => {
-      if (item.totalDays === 0) return;
+
+    chartSlices.forEach(item => {
       const pct = item.totalDays / grandTotal;
       const sa = angle;
       angle += pct * 2 * Math.PI;
@@ -2179,21 +2198,25 @@ function printMonthlyStats() {
       const y2 = (cy + r * Math.sin(ea)).toFixed(2);
       const large = pct > 0.5 ? 1 : 0;
       svgPaths += '<path d="M' + cx + ',' + cy + ' L' + x1 + ',' + y1 + ' A' + r + ',' + r + ' 0 ' + large + ',1 ' + x2 + ',' + y2 + ' Z" fill="' + item.color + '" stroke="white" stroke-width="2"/>';
-      if (pct > 0.05) {
-        const ma = sa + pct * Math.PI;
-        const lx = (cx + r * 0.65 * Math.cos(ma)).toFixed(1);
-        const ly = parseFloat((cy + r * 0.65 * Math.sin(ma)).toFixed(1));
-        const shortName = item.name.length > 7 ? item.name.slice(0, 6) + '…' : item.name;
-        svgPaths += '<text text-anchor="middle" fill="white" font-weight="bold">' +
-          '<tspan x="' + lx + '" y="' + (ly - 8) + '" font-size="11">' + shortName + '</tspan>' +
-          '<tspan x="' + lx + '" dy="16" font-size="13">' + Math.round(pct * 100) + '%</tspan>' +
-          '</text>';
-      }
+      const ma = sa + pct * Math.PI;
+      const lx = (cx + r * 0.65 * Math.cos(ma)).toFixed(1);
+      const ly = parseFloat((cy + r * 0.65 * Math.sin(ma)).toFixed(1));
+      const shortName = item._isMinor ? item.name : (item.name.length > 7 ? item.name.slice(0, 6) + '…' : item.name);
+      svgPaths += '<text text-anchor="middle" fill="white" font-weight="bold">' +
+        '<tspan x="' + lx + '" y="' + (ly - 8) + '" font-size="11">' + shortName + '</tspan>' +
+        '<tspan x="' + lx + '" dy="16" font-size="13">' + Math.round(pct * 100) + '%</tspan>' +
+        '</text>';
+    });
+
+    // 범례: 개별 항목 전부 표시
+    projChartData.filter(p => p.totalDays > 0).forEach(item => {
+      const pct = item.totalDays / grandTotal;
       pieLegend += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">' +
         '<span style="width:12px;height:12px;background:' + item.color + ';display:inline-block;border-radius:2px;flex-shrink:0;"></span>' +
         '<span style="font-size:8.5pt;">' + item.name + (item.code ? ' (' + item.code + ')' : '') + ': <strong>' + item.totalDays + '일</strong> (' + Math.round(pct * 100) + '%)</span>' +
         '</div>';
     });
+
     pieSVG = '<svg width="360" height="360" xmlns="http://www.w3.org/2000/svg">' + svgPaths + '</svg>';
   } else {
     pieSVG = '<p style="color:#999;text-align:center;padding:60px 0;">데이터 없음</p>';
