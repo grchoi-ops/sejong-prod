@@ -2202,8 +2202,8 @@ function printMonthlyStats() {
   let pieLegend = '';
   if (grandTotal > 0) {
     // 10% 미만은 묶음 슬라이스로 처리
-    const majorItems = projChartData.filter(p => p.totalDays > 0 && p.totalDays / grandTotal >= 0.1);
-    const minorItems = projChartData.filter(p => p.totalDays > 0 && p.totalDays / grandTotal < 0.1);
+    const majorItems = projChartData.filter(p => p.totalDays > 0 && p.totalDays / grandTotal >= 0.07);
+    const minorItems = projChartData.filter(p => p.totalDays > 0 && p.totalDays / grandTotal < 0.07);
     const minorTotal = minorItems.reduce((s, p) => s + p.totalDays, 0);
 
     // 묶음 슬라이스 레이블: 미만 중 가장 큰 프로젝트 + "외 N종"
