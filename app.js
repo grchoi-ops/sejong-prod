@@ -2236,10 +2236,20 @@ function printMonthlyStats() {
     pieSVG = '<p style="color:#999;text-align:center;padding:60px 0;">데이터 없음</p>';
   }
 
+  const tripTotal   = Object.values(tripSummary).reduce((s, t) => s + t.totalDays, 0);
+  const onsiteTotal = grandTotal - tripTotal;
+  const onsitePct   = grandTotal > 0 ? Math.round(onsiteTotal / grandTotal * 100) : 0;
+  const tripPct     = grandTotal > 0 ? Math.round(tripTotal   / grandTotal * 100) : 0;
+
   const pieChartHtml =
     '<div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap;margin-bottom:12px;">' +
     pieSVG +
-    '<div>' + pieLegend + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #ddd;font-size:9pt;color:#333;">전체 합계: <strong>' + grandTotal + '일</strong></div></div>' +
+    '<div>' + pieLegend +
+    '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #ddd;font-size:9pt;color:#333;line-height:1.8;">' +
+    '현장 작업 <strong>' + onsiteTotal + '일</strong> (' + onsitePct + '%)<br>' +
+    '출장 작업 <strong>' + tripTotal   + '일</strong> (' + tripPct   + '%)<br>' +
+    '전체 합계 <strong>' + grandTotal  + '일</strong>' +
+    '</div></div>' +
     '</div>';
 
   // ── 출장 HTML ──
