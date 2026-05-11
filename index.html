@@ -130,6 +130,7 @@
 
   <!-- 공용 하단 도구 -->
   <div class="settings-tools-bar">
+    <button class="btn btn-ghost btn-sm" onclick="openRestoreModal()">🕐 데이터 복구</button>
     <button class="btn btn-ghost btn-sm" onclick="exportData()">💾 JSON 백업</button>
     <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
       📂 JSON 불러오기 <input type="file" accept=".json" onchange="importData(event)" style="display:none;">
@@ -693,6 +694,21 @@
     <div style="font-size:12px;color:var(--text3);text-align:center;margin-bottom:24px;"></div>
     <div id="md-login-form-area"></div>
     <div id="md-login-error" style="color:var(--red);font-size:12px;margin-top:10px;display:none;"></div>
+  </div>
+</div>
+
+<!-- 데이터 복구 모달 -->
+<div id="restore-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;align-items:center;justify-content:center;">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;width:520px;max-width:94vw;max-height:80vh;display:flex;flex-direction:column;overflow:hidden;">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+      <strong style="font-size:15px;">🕐 데이터 복구</strong>
+      <button onclick="closeRestoreModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text2);">×</button>
+    </div>
+    <div style="padding:12px 20px;font-size:12px;color:var(--text3);">저장 시점으로 되돌립니다. 복원 전 현재 데이터는 자동 백업됩니다. (최근 30개 보관)</div>
+    <div id="restore-list" style="overflow-y:auto;flex:1;padding:8px 12px;"></div>
+    <div style="padding:12px 20px;border-top:1px solid var(--border);text-align:right;">
+      <button class="btn btn-ghost btn-sm" onclick="closeRestoreModal()">닫기</button>
+    </div>
   </div>
 </div>
 
