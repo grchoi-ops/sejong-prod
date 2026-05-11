@@ -6,6 +6,28 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
+async function saveSnapshot(modifiedBy) {
+  try {
+    const { data: rows, error } = await supabase.from('app_data').select('key, value');
+    if (error || !rows || rows.length === 0) return;
+    const snapshot = {};
+    rows.forEach(r => { snapshot[r.key] = r.value; });
+    await supabase.from('app_data_history').insert({
+      saved_by: modifiedBy || '알 수 없음',
+      snapshot
+    });
+    // 30개 초과분 삭제
+    const { data: old } = await supabase
+      .from('app_data_history')
+      .select('id')
+      .order('saved_at', { ascending: false })
+      .range(30, 9999);
+    if (old && old.length > 0) {
+      await supabase.from('app_data_history').delete().in('id', old.map(r => r.id));
+    }
+  } catch (_) { /* 스냅샷 실패해도 저장은 계속 */ }
+}
+
 async function upsertKey(key, value) {
   const now = new Date().toISOString();
 
@@ -42,6 +64,10 @@ module.exports = async (req, res) => {
 
   try {
     const { employees, projects, dailyData, purchaseDB, mdEntries, lastModified, modifiedBy } = req.body;
+
+    // 실질 데이터 변경 시에만 스냅샷 저장
+    const hasRealData = employees !== undefined || projects !== undefined || dailyData !== undefined;
+    if (hasRealData) await saveSnapshot(modifiedBy);
 
     const tasks = [];
     if (employees    !== undefined) tasks.push(upsertKey('employees',    employees));

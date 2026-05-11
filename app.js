@@ -4946,3 +4946,71 @@ function md_exportCSV() {
   URL.revokeObjectURL(url);
   showToast('CSV 내보내기 완료', 'success');
 }
+
+// ══════════════════════════════════════════
+//  데이터 복구 (스냅샷)
+// ══════════════════════════════════════════
+async function openRestoreModal() {
+  const modal = document.getElementById('restore-modal');
+  const list  = document.getElementById('restore-list');
+  modal.style.display = 'flex';
+  list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3);">불러오는 중...</div>';
+
+  try {
+    const res  = await fetch(API_BASE + '/api/backup');
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error);
+
+    if (!json.snapshots || json.snapshots.length === 0) {
+      list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3);">저장된 스냅샷이 없습니다.<br>데이터를 저장하면 자동으로 기록됩니다.</div>';
+      return;
+    }
+
+    list.innerHTML = json.snapshots.map(s => {
+      const dt = new Date(s.saved_at);
+      const label = dt.toLocaleString('ko-KR', {timeZone:'Asia/Seoul',
+        year:'numeric',month:'2-digit',day:'2-digit',
+        hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      const by = s.saved_by || '알 수 없음';
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 8px;border-bottom:1px solid var(--border);">' +
+        '<div>' +
+        '<div style="font-size:13px;font-weight:600;">' + label + '</div>' +
+        '<div style="font-size:11px;color:var(--text3);margin-top:2px;">저장자: ' + by + '</div>' +
+        '</div>' +
+        '<button class="btn btn-sm" style="background:var(--accent);color:#fff;flex-shrink:0;" ' +
+        'onclick="confirmRestore(' + s.id + ', \'' + label + '\')">복원</button>' +
+        '</div>';
+    }).join('');
+
+  } catch (e) {
+    list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--red);">오류: ' + e.message + '</div>';
+  }
+}
+
+function closeRestoreModal() {
+  document.getElementById('restore-modal').style.display = 'none';
+}
+
+async function confirmRestore(id, label) {
+  if (!confirm('"' + label + '" 시점으로 데이터를 복원하시겠습니까?\n\n현재 데이터는 자동으로 백업된 후 복원됩니다.')) return;
+
+  const list = document.getElementById('restore-list');
+  list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3);">복원 중...</div>';
+
+  try {
+    const res  = await fetch(API_BASE + '/api/backup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error);
+
+    closeRestoreModal();
+    showToast('복원 완료! 데이터를 다시 불러옵니다...', 'success');
+    setTimeout(() => loadDailyData(), 1200);
+
+  } catch (e) {
+    list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--red);">복원 실패: ' + e.message + '</div>';
+  }
+}
