@@ -627,6 +627,13 @@ route('#/equipment/:id', ({id})=>{
     });
   events.sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));
 
+  // QR 없으면 백그라운드 생성 후 재렌더
+  if(!e.qrDataUrl && window.QRCode){
+    QRCode.toDataURL(e.id, {width:120, margin:1, errorCorrectionLevel:'M'})
+      .then(dataUrl=>{ Store.update('equipment', e.id, {qrDataUrl:dataUrl}); jbRender(); })
+      .catch(err=>console.error('QR 생성 실패:', err));
+  }
+
   return `
   <div>
     <a href="#/equipment" class="text-sm text-blue-600">← 목록</a>
