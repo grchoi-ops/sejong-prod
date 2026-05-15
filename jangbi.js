@@ -58,6 +58,7 @@ function getSupaClient(){
 function resetSupaClient(){ _supaClient = null; SupaStore.enabled = false; }
 
 const BUCKET = 'equipment-photos';
+function qrUrl(id){ return 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&margin=4&data='+encodeURIComponent(id); }
 
 /* ── SupaStore ── */
 const SupaStore = {
@@ -628,11 +629,6 @@ route('#/equipment/:id', ({id})=>{
   events.sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));
 
 
-  setTimeout(()=>{
-    const cvs = document.getElementById('eq-detail-qr');
-    if(cvs && window.QRCode) QRCode.toCanvas(cvs, cvs.dataset.id, {width:90, margin:1}).catch(()=>{});
-  }, 50);
-
   return `
   <div>
     <a href="#/equipment" class="text-sm text-blue-600">← 목록</a>
@@ -643,7 +639,7 @@ route('#/equipment/:id', ({id})=>{
         </div>
         <div class="flex-1 min-w-[200px]" style="position:relative;">
           <div style="position:absolute;top:0;right:0;text-align:center;">
-            <canvas id="eq-detail-qr" data-id="${e.id}" width="90" height="90" style="border-radius:6px;border:1px solid var(--border);display:block;"></canvas>
+            <img src="${qrUrl(e.id)}" style="width:90px;height:90px;border-radius:6px;border:1px solid var(--border);display:block;" />
             <div style="font-size:10px;color:var(--text-muted,#aaa);margin-top:3px;">${e.id}</div>
           </div>
           <div class="flex items-center gap-2 flex-wrap" style="padding-right:100px;">
@@ -883,15 +879,6 @@ function equipmentEdit(eq){
           data.status = data.status || '사내';
           Store.add('equipment', data);
         } else { Store.update('equipment', eq.id, data); }
-        // QR 생성 후 저장
-        const targetId = isNew ? data.id : eq.id;
-        if(window.QRCode){
-          try{
-            const dataUrl = await QRCode.toDataURL(targetId, {width:120, margin:1, errorCorrectionLevel:'M'});
-            Store.update('equipment', targetId, {qrDataUrl: dataUrl});
-          }catch(err){ console.error('QR 생성 실패:', err); }
-        } else { console.warn('QRCode 라이브러리 미로드'); }
-        jbNavigate('#/equipment/'+(isNew ? data.id : eq.id));
       } finally { if(btn){ btn.disabled=false; btn.textContent=isNew?'등록':'저장'; } }
     };
   });
@@ -1247,9 +1234,7 @@ route('#/qr-print', ()=>{
       if(size === 'small'){
         // 소형: 40×30mm — QR 좌측 + 장비명·스펙·관리번호·로고 우측
         labels = labelData.map(e=>{
-          const qrImg = e.qrDataUrl
-            ? `<img src="${e.qrDataUrl}" style="width:18mm;height:18mm;display:block;" />`
-            : `<div style="width:18mm;height:18mm;border:1px dashed #ccc;display:flex;align-items:center;justify-content:center;font-size:7px;color:#bbb;">QR없음</div>`;
+          const qrImg = `<img src="${qrUrl(e.id)}" style="width:18mm;height:18mm;display:block;" />`;
           const logoS = window._jbLogoDataUrl ? `<img src="${window._jbLogoDataUrl}" style="width:100%;max-width:10mm;margin-top:2px;display:block;" />` : '';
           return `<div class="label">
             <div class="qr-s">${qrImg}</div>
@@ -1275,9 +1260,7 @@ route('#/qr-print', ()=>{
       } else {
         // 대형: 90×65mm
         labels = labelData.map(e=>{
-          const qrImg = e.qrDataUrl
-            ? `<img src="${e.qrDataUrl}" style="width:70px;height:70px;display:block;" />`
-            : `<div style="width:70px;height:70px;border:1px dashed #ccc;display:flex;align-items:center;justify-content:center;font-size:8px;color:#bbb;">QR없음</div>`;
+        const qrImg = `<img src="${qrUrl(e.id)}" style="width:70px;height:70px;display:block;" />`;
           return `<div class="label">
             <div class="info">
               <div class="name">${e.type||''}</div>
@@ -1342,7 +1325,7 @@ route('#/qr-print', ()=>{
         ${list.map(e=>`
         <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
           <input type="checkbox" class="label-chk" value="${e.id}" checked style="width:16px;height:16px;flex-shrink:0;" />
-          ${e.qrDataUrl?`<img src="${e.qrDataUrl}" style="width:44px;height:44px;flex-shrink:0;border-radius:3px;" />`:`<div style="width:44px;height:44px;flex-shrink:0;background:var(--surface3);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--text-muted,#aaa);">QR없음</div>`}
+          ${`<img src="${qrUrl(e.id)}" style="width:44px;height:44px;flex-shrink:0;border-radius:3px;" />`}
           <div style="min-width:0;">
             <div style="font-weight:600;font-size:13px;">${e.type||''}</div>
             <div style="font-size:12px;color:var(--text-muted,#999);">${e.id}</div>
@@ -1556,16 +1539,6 @@ window.jangbiInit = async function(){
         const a = e.target.closest('a[href^="#/"]');
         if(a){ e.preventDefault(); jbNavigate(a.getAttribute('href')); }
       });
-    }
-    // 기존 장비 중 qrDataUrl 없는 항목 백그라운드 생성
-    if(window.QRCode){
-      const missing = Store.equipment.filter(e=>!e.qrDataUrl);
-      for(const e of missing){
-        try{
-          const dataUrl = await QRCode.toDataURL(e.id, {width:120, margin:1, errorCorrectionLevel:'M'});
-          Store.update('equipment', e.id, {qrDataUrl: dataUrl});
-        }catch(err){ console.error('QR 생성 실패 '+e.id+':', err); }
-      }
     }
     _jbInitialized = true;
   } else {
