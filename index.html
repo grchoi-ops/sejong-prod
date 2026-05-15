@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>㈜세종기술 생산부 작업관리</title>
 <link rel="stylesheet" href="style.css">
+<!-- ⑩ 장비관리 의존성 -->
+<script>window.tailwind={config:{corePlugins:{preflight:false}}};</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 </head>
 <body>
 
@@ -38,6 +45,7 @@
     <button class="tab-btn" data-tab="purchase">⑦ 구매요청</button>
     <button class="tab-btn" data-tab="manday">⑧ M/D</button>
     <button class="tab-btn" data-tab="overtime">⑨ 특근보고서</button>
+    <button class="tab-btn" data-tab="jangbi">⑩ 장비관리</button>
   </nav>
 </header>
 
@@ -686,6 +694,13 @@
   </div>
 </section>
 
+<!-- ══════════════════════════════════════════
+     탭⑩: 장비관리
+══════════════════════════════════════════ -->
+<section id="tab-jangbi" class="tab-panel">
+  <div id="jangbi-root" style="min-height:100vh;"></div>
+</section>
+
 <!-- M/D 로그인 오버레이 -->
 <div id="md-login-overlay"
   style="display:none;position:fixed;inset:0;background:rgba(15,17,23,0.96);align-items:center;justify-content:center;z-index:5000;">
@@ -1108,5 +1123,7 @@ table{border-collapse:collapse;width:100%;}
   win.document.close();
 }
 </script>
+<img id="jb-logo-src" src="ci_logo6.png" style="display:none;" />
+<script src="jangbi.js"></script>
 </body>
 </html>

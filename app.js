@@ -69,6 +69,7 @@ let state = {
   _statsYear: new Date().getFullYear(),
   _statsMonth: new Date().getMonth() + 1
 };
+window.state = state;  // jangbi.js 등 외부 모듈에서 참조 가능하도록 전역 노출
 
 let currentUser = null;
 
@@ -192,6 +193,14 @@ async function _finishInit() {
   renderDashboard();
   checkAlerts();
 
+  // 장비관리 백그라운드 초기화 — 소모품 재고를 메인 대시보드에 표시하기 위함
+  setTimeout(async ()=>{
+    if(typeof jangbiInit === 'function'){
+      await jangbiInit();
+      renderDashboard();
+    }
+  }, 500);
+
   const fromSheet = await loadFromSheet();
   if (fromSheet) {
     renderEmployees();
@@ -224,6 +233,7 @@ function setupTabs() {
       if (tab === 'purchase')  pr_init();
       if (tab === 'manday')    md_initTab();
       if (tab === 'overtime')  ot_init();
+      if (tab === 'jangbi')    jangbiInit();
       checkAlerts();
     });
   });
@@ -3355,7 +3365,30 @@ function renderDashboard() {
         '<div class="card-title">이번 주</div>' +
         '<div class="mini-cal">' + miniCalCells.join('') + '</div>' +
       '</div>' +
-    '</div>';
+    '</div>' +
+
+    // 소모품 재고 부족 (jangbi Store 연동)
+    (()=>{
+      if(typeof window.Store === 'undefined' || !window.Store.consumables?.length) return '';
+      const low = window.Store.consumables.filter(c=>Number(c.currentStock)<=Number(c.minStock||0));
+      if(!low.length) return '';
+      const rows = low.map(c=>{
+        const cur = Number(c.currentStock);
+        const min = Number(c.minStock||0);
+        const unit = c.unit ? ' '+c.unit : '';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid var(--border);font-size:13px;">' +
+          '<span>' + (c.name||'') + '</span>' +
+          '<span style="color:var(--accent4);">현재 <strong>' + cur + unit + '</strong> / 최소 ' + min + unit + '</span>' +
+        '</div>';
+      }).join('');
+      return '<div class="card" style="margin-top:0;">' +
+        '<div class="card-title" style="color:var(--accent4);">📦 소모품 재고 부족 (' + low.length + ')</div>' +
+        rows +
+        '<div style="margin-top:8px;text-align:right;">' +
+          '<button class="btn btn-ghost btn-sm" onclick="switchToTab(\'jangbi\')">⑩ 장비관리에서 확인 →</button>' +
+        '</div>' +
+      '</div>';
+    })();
 }
 
 // ══════════════════════════════════════════
