@@ -179,6 +179,22 @@ async function compressImage(file, maxW=640, quality=0.65){
 }
 
 /* ── Supabase Storage 업로드 ── */
+async function uploadQR(equipmentId){
+  const supa = getSupaClient();
+  if(!supa) return null;
+  try{
+    const apiUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=4&data='+encodeURIComponent(equipmentId);
+    const resp = await fetch(apiUrl);
+    if(!resp.ok) return null;
+    const blob = await resp.blob();
+    const path = 'qr/'+equipmentId+'.png';
+    const { error } = await supa.storage.from(BUCKET).upload(path, blob, { upsert:true, contentType:'image/png' });
+    if(error) return null;
+    const { data } = supa.storage.from(BUCKET).getPublicUrl(path);
+    return data.publicUrl;
+  }catch(e){ return null; }
+}
+
 async function uploadPhoto(file, equipmentId){
   const supa = getSupaClient();
   if(!supa) return { error: 'Supabase 미설정' };
@@ -639,7 +655,7 @@ route('#/equipment/:id', ({id})=>{
         </div>
         <div class="flex-1 min-w-[200px]" style="position:relative;">
           <div style="position:absolute;top:0;right:0;text-align:center;">
-            <img src="${qrUrl(e.id)}" style="width:90px;height:90px;border-radius:6px;border:1px solid var(--border);display:block;" />
+            <img src="${(e.qrUrl||qrUrl(e.id))}" style="width:90px;height:90px;border-radius:6px;border:1px solid var(--border);display:block;" />
             <div style="font-size:10px;color:var(--text-muted,#aaa);margin-top:3px;">${e.id}</div>
           </div>
           <div class="flex items-center gap-2 flex-wrap" style="padding-right:100px;">
@@ -879,6 +895,11 @@ function equipmentEdit(eq){
           data.status = data.status || '사내';
           Store.add('equipment', data);
         } else { Store.update('equipment', eq.id, data); }
+        // QR 이미지 Supabase Storage에 업로드 후 URL 저장
+        const targetId = isNew ? data.id : eq.id;
+        const qrStorageUrl = await uploadQR(targetId);
+        if(qrStorageUrl) Store.update('equipment', targetId, {qrUrl: qrStorageUrl});
+        jbNavigate('#/equipment/'+targetId);
       } finally { if(btn){ btn.disabled=false; btn.textContent=isNew?'등록':'저장'; } }
     };
   });
@@ -1234,7 +1255,7 @@ route('#/qr-print', ()=>{
       if(size === 'small'){
         // 소형: 40×30mm — QR 좌측 + 장비명·스펙·관리번호·로고 우측
         labels = labelData.map(e=>{
-          const qrImg = `<img src="${qrUrl(e.id)}" style="width:18mm;height:18mm;display:block;" />`;
+          const qrImg = `<img src="${(e.qrUrl||qrUrl(e.id))}" style="width:18mm;height:18mm;display:block;" />`;
           const logoS = window._jbLogoDataUrl ? `<img src="${window._jbLogoDataUrl}" style="width:100%;max-width:10mm;margin-top:2px;display:block;" />` : '';
           return `<div class="label">
             <div class="qr-s">${qrImg}</div>
@@ -1260,7 +1281,7 @@ route('#/qr-print', ()=>{
       } else {
         // 대형: 90×65mm
         labels = labelData.map(e=>{
-        const qrImg = `<img src="${qrUrl(e.id)}" style="width:70px;height:70px;display:block;" />`;
+        const qrImg = `<img src="${(e.qrUrl||qrUrl(e.id))}" style="width:70px;height:70px;display:block;" />`;
           return `<div class="label">
             <div class="info">
               <div class="name">${e.type||''}</div>
@@ -1325,7 +1346,7 @@ route('#/qr-print', ()=>{
         ${list.map(e=>`
         <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
           <input type="checkbox" class="label-chk" value="${e.id}" checked style="width:16px;height:16px;flex-shrink:0;" />
-          ${`<img src="${qrUrl(e.id)}" style="width:44px;height:44px;flex-shrink:0;border-radius:3px;" />`}
+          ${`<img src="${(e.qrUrl||qrUrl(e.id))}" style="width:44px;height:44px;flex-shrink:0;border-radius:3px;" />`}
           <div style="min-width:0;">
             <div style="font-weight:600;font-size:13px;">${e.type||''}</div>
             <div style="font-size:12px;color:var(--text-muted,#999);">${e.id}</div>
