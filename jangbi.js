@@ -627,12 +627,11 @@ route('#/equipment/:id', ({id})=>{
     });
   events.sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));
 
-  // QR 없으면 백그라운드 생성 후 재렌더
-  if(!e.qrDataUrl && window.QRCode){
-    QRCode.toDataURL(e.id, {width:120, margin:1, errorCorrectionLevel:'M'})
-      .then(dataUrl=>{ Store.update('equipment', e.id, {qrDataUrl:dataUrl}); jbRender(); })
-      .catch(err=>console.error('QR 생성 실패:', err));
-  }
+
+  setTimeout(()=>{
+    const cvs = document.getElementById('eq-detail-qr');
+    if(cvs && window.QRCode) QRCode.toCanvas(cvs, cvs.dataset.id, {width:90, margin:1}).catch(()=>{});
+  }, 50);
 
   return `
   <div>
@@ -644,10 +643,7 @@ route('#/equipment/:id', ({id})=>{
         </div>
         <div class="flex-1 min-w-[200px]" style="position:relative;">
           <div style="position:absolute;top:0;right:0;text-align:center;">
-            ${e.qrDataUrl
-              ? `<img src="${e.qrDataUrl}" style="width:90px;height:90px;border-radius:6px;border:1px solid var(--border);" />`
-              : `<div style="width:90px;height:90px;border-radius:6px;border:1px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text-muted,#aaa);">QR없음</div>`
-            }
+            <canvas id="eq-detail-qr" data-id="${e.id}" width="90" height="90" style="border-radius:6px;border:1px solid var(--border);display:block;"></canvas>
             <div style="font-size:10px;color:var(--text-muted,#aaa);margin-top:3px;">${e.id}</div>
           </div>
           <div class="flex items-center gap-2 flex-wrap" style="padding-right:100px;">
