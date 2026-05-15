@@ -5,8 +5,8 @@
    ============================================================ */
 
 // ⬇ 실제 Supabase 값으로 교체 필요
-const JB_SUPA_URL = 'https://YOUR_PROJECT.supabase.co';
-const JB_SUPA_KEY = 'YOUR_ANON_KEY';
+const JB_SUPA_URL = 'https://fjpqsoxqsxyzstjuysdx.supabase.co';
+const JB_SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZqcHFzb3hxc3h5enN0anV5c2R4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NDg2NzMsImV4cCI6MjA5MTMyNDY3M30.47aiG4TEKQtS7rw3vz2h0aJUgdxGAWU3rUFcaoVpfKU';
 
 /* ── 유틸 ── */
 const LS = {
