@@ -1256,7 +1256,7 @@ route('#/qr-print', ()=>{
         // 소형: 40×30mm — QR 좌측 + 장비명·스펙·관리번호·로고 우측
         labels = labelData.map(e=>{
           const qrImg = `<img src="${(e.qrUrl||qrUrl(e.id))}" style="width:18mm;height:18mm;display:block;" />`;
-          const logoS = window._jbLogoDataUrl ? `<img src="${window._jbLogoDataUrl}" style="width:100%;max-width:10mm;margin-top:2px;display:block;" />` : '';
+          const logoS = window._jbLogoDataUrl ? `<img src="${window._jbLogoDataUrl}" style="width:100%;max-width:15mm;margin-top:2px;display:block;" />` : '';
           return `<div class="label">
             <div class="qr-s">${qrImg}</div>
             <div class="info-s">
