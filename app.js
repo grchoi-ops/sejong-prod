@@ -65,6 +65,7 @@ let state = {
   projects: [],
   dailyData: {},  // { 'YYYY-MM-DD': { emp: {...}, proj: {...} } }
   purchaseDB: [],
+  purchaseDrafts: [],  // 구매요청 임시저장 (미확정 초안)
   mdEntries: [],
   _lastSyncTime: null,
   _statsYear: new Date().getFullYear(),
@@ -278,6 +279,7 @@ function saveLocal() {
     projects:   state.projects,
     dailyData:  state.dailyData,
     purchaseDB: state.purchaseDB || [],
+    purchaseDrafts: state.purchaseDrafts || [],
     mdEntries:  state.mdEntries  || []
   }));
 }
@@ -291,6 +293,7 @@ function loadLocal() {
     state.projects   = d.projects   || [];
     state.dailyData  = d.dailyData  || {};
     state.purchaseDB = d.purchaseDB || [];
+    state.purchaseDrafts = d.purchaseDrafts || [];
     state.mdEntries  = d.mdEntries  || [];
     migrateStateFields();
     return true;
@@ -301,6 +304,7 @@ function loadLocal() {
 // 하위호환: 기존 데이터에 없는 필드 초기화 + 구매관리 localStorage 마이그레이션 (F3)
 function migrateStateFields() {
   if (!Array.isArray(state.purchaseDB)) state.purchaseDB = [];
+  if (!Array.isArray(state.purchaseDrafts)) state.purchaseDrafts = [];
 
   // [단계2] 직원 신규 필드 기본값 주입
   state.employees.forEach(e => {
@@ -426,6 +430,7 @@ async function loadFromSheet() {
       state.projects   = d.projects   || [];
       state.dailyData  = d.dailyData  || {};
       state.purchaseDB = d.purchaseDB || [];
+      state.purchaseDrafts = d.purchaseDrafts || [];
       state.mdEntries  = d.mdEntries  || [];
       state._lastSyncTime = d.lastModified || new Date().toISOString();
       migrateStateFields();
@@ -482,6 +487,7 @@ async function saveToSheet() {
         projects:     state.projects,
         dailyData:    state.dailyData,
         purchaseDB:   state.purchaseDB || [],
+        purchaseDrafts: state.purchaseDrafts || [],
         mdEntries:    state.mdEntries  || [],
         lastModified: new Date().toISOString(),
         modifiedBy:   localStorage.getItem('sejong_user_name') || '알 수 없음'
@@ -622,6 +628,8 @@ function renderEmployees() {
         '✈장기출장' +
       '</label>' +
       '<input type="text" placeholder="출장지" value="' + (emp.tripLocation||'') + '" style="font-size:10px;width:72px;padding:1px 4px;border:1px solid rgba(255,179,71,0.4);border-radius:4px;background:rgba(255,179,71,0.08);color:var(--accent4);flex-shrink:0;" onchange="updateEmpField(' + emp.id + ',\'tripLocation\',this.value)">' +
+      // 입사일: 이전 날짜는 자동 휴무 처리
+      '<input type="date" value="' + (emp.hireDate||'') + '" title="입사일 — 이전 날짜는 자동 휴무 처리" style="font-size:10px;padding:1px 4px;flex-shrink:0;" onchange="updateEmpField(' + emp.id + ',\'hireDate\',this.value)">' +
       '<button class="btn btn-danger btn-sm" style="padding:2px 5px;font-size:10px;flex-shrink:0;" onclick="removeEmployee(' + emp.id + ')">✕</button>';
     grid.appendChild(card);
   });
@@ -631,16 +639,19 @@ function addEmployee() {
   const name   = document.getElementById('new-emp-name').value.trim();
   const div    = document.getElementById('new-emp-div').value;
   const mdRole = document.getElementById('new-emp-role')?.value || '일반';
+  const hireDate = document.getElementById('new-emp-hire')?.value || '';
   if (!name) { showToast('이름을 입력하세요.', 'error'); return; }
   const maxId = state.employees.reduce((m, e) => Math.max(m, e.id), 0);
   state.employees.push({
-    id: maxId + 1, name, div, mdRole,
+    id: maxId + 1, name, div, mdRole, hireDate,
     home: '', longTermTrip: false, position: '', phone: '',
     pin: '0000', pinChanged: false
   });
   saveState();
   renderEmployees();
   document.getElementById('new-emp-name').value = '';
+  const hireEl = document.getElementById('new-emp-hire');
+  if (hireEl) hireEl.value = '';
   showToast(`${name} 추가 완료`, 'success');
 }
 
@@ -678,8 +689,8 @@ function updateEmpField(id, field, val) {
     emp[field] = val;
   }
   saveState();
-  // longTermTrip 변경 시 일일 입력 그리드 즉시 갱신
-  if (field === 'longTermTrip') loadDailyData();
+  // longTermTrip·hireDate 변경 시 일일 입력 그리드 즉시 갱신
+  if (field === 'longTermTrip' || field === 'hireDate') loadDailyData();
 }
 
 // ══════════════════════════════════════════
@@ -837,6 +848,32 @@ function getDateStr() {
 }
 
 /**
+ * [입사일] 해당 날짜가 직원의 입사일 이전인지 판별
+ * 입사일(YYYY-MM-DD)이 설정된 경우, 그 이전 날짜는 아직 근무 전이므로 자동 휴무로 취급한다.
+ * (신규 입사자를 입사 전 날짜마다 일일이 휴무 처리해야 하던 문제 해결)
+ * @param {object} emp
+ * @param {string} dateStr - 'YYYY-MM-DD'
+ * @returns {boolean}
+ */
+function isPreHire(emp, dateStr) {
+  return !!(emp && emp.hireDate && dateStr && dateStr < emp.hireDate);
+}
+
+/**
+ * [입사일] 저장된 기록이 없을 때 사용할 기본 일일 데이터.
+ * 입사 전 날짜는 '휴무', 그 외는 '출근'을 기본값으로 반환한다.
+ * @param {object} emp
+ * @param {string} dateStr
+ * @returns {object}
+ */
+function defaultEmpDay(emp, dateStr) {
+  return {
+    status: isPreHire(emp, dateStr) ? '휴무' : '출근',
+    overtimeHours: 0, projId: '', onTrip: false, work: '', halfDayHours: 0
+  };
+}
+
+/**
  * [단계5] 일괄 휴무 처리 — 현재 날짜의 장기출장 제외 전 직원을 '휴무'로 전환
  */
 function setBulkAbsence() {
@@ -884,12 +921,12 @@ function loadDailyData() {
   }
 
   const data = state.dailyData[date] || {};
-  renderEmpInputGrid(data.emp || {});
+  renderEmpInputGrid(data.emp || {}, date);
   renderProjEntries(data.proj || {});
   updateStats();
 }
 
-function renderEmpInputGrid(empData) {
+function renderEmpInputGrid(empData, date) {
   const grid = document.getElementById('emp-input-grid');
   grid.innerHTML = '';
 
@@ -907,7 +944,7 @@ function renderEmpInputGrid(empData) {
   let lastDiv = null;
 
   sorted.forEach(emp => {
-    const ed = empData[emp.id] || { status:'출근', overtimeHours:0, projId:'', onTrip:false, work:'' };
+    const ed = empData[emp.id] || defaultEmpDay(emp, date);
     const d = DIVISIONS[emp.div] || { label:emp.div, cls:'' };
     // [단계4] 장기출장자는 메인 그리드에서 제외하고 별도 섹션에 표시
     if (emp.longTermTrip) return;
@@ -1109,7 +1146,7 @@ function renderProjEntries(projData) {
     const counts = {};
     MANPOWER_CATS.forEach(c => counts[c] = 0);
     state.employees.forEach(emp => {
-      const ed = empData[emp.id] || { status:'출근', projId:'' };
+      const ed = empData[emp.id] || defaultEmpDay(emp, date);
       const isAbsent = ed.status === '휴무' || ed.status === '연차';
       if (isAbsent) return;
       if (String(ed.projId) !== String(projId)) return;
@@ -1201,7 +1238,7 @@ function rerenderProjTotals(projId) {
   const auto = {};
   MANPOWER_CATS.forEach(c => auto[c] = 0);
   state.employees.forEach(emp => {
-    const ed = empData[emp.id] || { status:'출근', projId:'' };
+    const ed = empData[emp.id] || defaultEmpDay(emp, date);
     if (ed.status === '휴무' || ed.status === '연차') return;
     if (String(ed.projId) !== String(projId)) return;
     const mpCat = DIV_TO_MP[emp.div];
@@ -1243,7 +1280,7 @@ function resetToAuto(projId) {
   const counts = {};
   MANPOWER_CATS.forEach(c => counts[c] = 0);
   state.employees.forEach(emp => {
-    const ed = empData[emp.id] || { status:'출근', projId:'' };
+    const ed = empData[emp.id] || defaultEmpDay(emp, date);
     const isAbsent = ed.status === '휴무' || ed.status === '연차';
     if (isAbsent) return;
     if (String(ed.projId) !== String(projId)) return;
@@ -1285,7 +1322,7 @@ function updateStats() {
   const divCount = { 제관:0, 용접:0, 보조:0, 가공:0, 구동:0, 공사:0 };
 
   state.employees.forEach(emp => {
-    const ed = data[emp.id] || { status:'출근', overtimeHours:0, onTrip:false };
+    const ed = data[emp.id] || defaultEmpDay(emp, date);
     const isAbsent = ed.status === '휴무' || ed.status === '연차';
     if (!isAbsent) {
       present++;
@@ -1416,7 +1453,7 @@ function buildReportHTML(date) {
   const tripNoProjEmps = [];
 
   state.employees.forEach(emp => {
-    const ed = empData[emp.id] || { status:'출근', overtimeHours:0, projId:'', onTrip:false, work:'' };
+    const ed = empData[emp.id] || defaultEmpDay(emp, date);
     if (ed.status === '휴무') {}
     else if (ed.status === '연차') {}
     else if (ed.status === '반차') { presentCount++; }
@@ -1448,7 +1485,7 @@ function buildReportHTML(date) {
         '<td style="text-align:left;padding-left:6px;font-size:10px;color:#c07000;font-weight:600;">' + locLabel + '</td>' +
         '</tr>';
     }
-    const ed = empData[emp.id] || { status:'출근', overtimeHours:0, projId:'', onTrip:false, work:'' };
+    const ed = empData[emp.id] || defaultEmpDay(emp, date);
     const isAbsent = ed.status === '휴무';
     const otH = ed.overtimeHours || (ed.overtime ? 2.5 : 0);
     const proj = state.projects.find(p => String(p.id) === String(ed.projId));
@@ -1485,7 +1522,7 @@ function buildReportHTML(date) {
     const counts = {};
     MANPOWER_CATS.forEach(c => counts[c] = 0);
     state.employees.forEach(emp => {
-      const ed = empData[emp.id] || { status:'출근', projId:'' };
+      const ed = empData[emp.id] || defaultEmpDay(emp, date);
       if (ed.status === '휴무' || ed.status === '연차') return;
       if (String(ed.projId) !== String(projId)) return;
       const mpCat = DIV_TO_MP[emp.div];
@@ -2543,7 +2580,7 @@ function renderCalendar(year, month) {
     if (data) {
       const empData = data.emp || {};
       state.employees.forEach(emp => {
-        const ed = empData[emp.id] || { status:'출근' };
+        const ed = empData[emp.id] || defaultEmpDay(emp, date);
         if (ed.status === '휴무' || ed.status === '연차') absent++;
         else present++;
       });
@@ -3401,6 +3438,8 @@ function showEmpDetail(empId) {
     // [단계7] status:'휴무'인 날은 출근률 분모(totalDays)에서 제외
     if (ed && ed.status === '휴무') {
       // 주말 휴무 → 분모·분자 모두 미포함
+    } else if (isPreHire(emp, dateStr)) {
+      // [입사일] 입사 전 날짜 → 휴무와 동일하게 분모·분자 모두 미포함
     } else if (!ed) {
       // 데이터 있는 날인데 이 직원 기록 없음 → 출근으로 간주
       workDays++;
@@ -3431,7 +3470,7 @@ function showEmpDetail(empId) {
     if (recentRows.length < 5 && dayData) {
       const dd2 = new Date(dateStr + 'T00:00:00');
       const dow2 = DAYS_KO[dd2.getDay()];
-      const edR = (dayData.emp || {})[empId] || { status: '출근' };
+      const edR = (dayData.emp || {})[empId] || defaultEmpDay(emp, dateStr);
       const proj = state.projects.find(p => String(p.id) === String(edR.projId || ''));
       const projLabel = proj ? proj.client : '';
       const otLabel = (edR.overtimeHours > 0) ? ' 잔업' + edR.overtimeHours + 'h' : '';
@@ -3497,7 +3536,8 @@ function showEmpDetail(empId) {
           emp.name + ' &nbsp;<span class="div-badge ' + divInfo.cls + '">' + divInfo.label + '</span>' +
         '</div>' +
         '<div style="font-size:12px;color:var(--text3);margin-top:4px;">' +
-          (emp.home ? '기본 출장지: ' + emp.home : '&nbsp;') +
+          (emp.hireDate ? '입사일: ' + emp.hireDate + (emp.home ? ' · ' : '') : '') +
+          (emp.home ? '기본 출장지: ' + emp.home : (emp.hireDate ? '' : '&nbsp;')) +
         '</div>' +
       '</div>' +
       '<button class="emp-detail-close" onclick="closeEmpDetailModal()">✕ 닫기</button>' +
@@ -3863,6 +3903,9 @@ let pr_activeSubTab = 'input';
 /** 구매 요청서 작성 폼의 품목 배열 (임시) */
 let pr_formItems = [];
 
+/** 현재 폼에 불러온 임시저장 초안 id (신규 작성 시 null) */
+let pr_currentDraftId = null;
+
 /**
  * 구매요청 서브탭 전환
  * @param {string} subId - 'input'|'db'|'stats'
@@ -3886,6 +3929,7 @@ function pr_init() {
   pr_populateProjectSelect();
   pr_setDefaultDate();
   if (pr_formItems.length === 0) pr_addItemRow();
+  pr_renderDrafts();
   if (pr_activeSubTab === 'db')    pr_renderDB();
   if (pr_activeSubTab === 'stats') pr_renderStats();
 }
@@ -4048,13 +4092,20 @@ async function pr_saveEntry() {
     });
   });
 
+  // 초안에서 불러와 확정 저장한 경우, 해당 초안은 임시저장 목록에서 제거
+  if (pr_currentDraftId) {
+    state.purchaseDrafts = (state.purchaseDrafts || []).filter(d => d.id !== pr_currentDraftId);
+  }
+
   saveState();
   const btn = document.getElementById('pr-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
+
   try {
     await saveToSheet();
     showToast(items.length + '개 품목 저장 완료', 'success');
     pr_resetForm();
+    pr_renderDrafts();
   } catch(e) {
     showToast('서버 저장 실패 (로컬엔 저장됨)', 'error');
   } finally {
@@ -4073,8 +4124,206 @@ function pr_resetForm() {
   const tbody = document.getElementById('pr-item-tbody');
   if (tbody) tbody.innerHTML = '';
   pr_formItems = [];
+  pr_currentDraftId = null;
+  _pr_updateDraftEditingLabel();
   pr_addItemRow();
   pr_setDefaultDate();
+}
+
+// ── 임시 저장 (초안) ──
+
+/** 고유 id 생성 */
+function _pr_genDraftId() {
+  return 'd' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+}
+
+/** "임시저장 편집 중" 라벨 갱신 */
+function _pr_updateDraftEditingLabel() {
+  const el = document.getElementById('pr-draft-editing');
+  if (!el) return;
+  if (pr_currentDraftId) {
+    el.style.display = '';
+    el.textContent = '✎ 임시저장 편집 중 — 저장 시 갱신됩니다';
+  } else {
+    el.style.display = 'none';
+    el.textContent = '';
+  }
+}
+
+/**
+ * 현재 폼 내용을 임시저장(초안)으로 보관.
+ * 이미 불러온 초안이면 갱신, 아니면 새 초안으로 추가.
+ */
+function pr_saveDraft() {
+  const sel    = document.getElementById('pr-proj-sel');
+  const projId = sel ? sel.value : '';
+  const proj   = state.projects.find(p => String(p.id) === projId);
+  const items  = _pr_collectItems();
+
+  if (!proj && items.length === 0) {
+    showToast('프로젝트를 선택하거나 품목을 1개 이상 입력하세요.', 'error');
+    return;
+  }
+
+  if (!Array.isArray(state.purchaseDrafts)) state.purchaseDrafts = [];
+
+  const draft = {
+    id:       pr_currentDraftId || _pr_genDraftId(),
+    reqDate:  document.getElementById('pr-req-date')?.value || '',
+    claimNo:  document.getElementById('pr-claim-no')?.value?.trim() || '',
+    projId:   proj ? proj.id : '',
+    projName: proj ? proj.client : '(미선택)',
+    projCode: proj ? (proj.code || '') : '',
+    site:     document.getElementById('pr-site')?.value?.trim()     || '',
+    manager:  document.getElementById('pr-manager')?.value?.trim()  || '',
+    position: document.getElementById('pr-position')?.value?.trim() || '',
+    phone:    document.getElementById('pr-phone')?.value?.trim()    || '',
+    items:    items,
+    author:   localStorage.getItem('sejong_user_name') || '알 수 없음',
+    savedAt:  new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
+  };
+
+  const idx = state.purchaseDrafts.findIndex(d => d.id === draft.id);
+  if (idx >= 0) state.purchaseDrafts[idx] = draft;
+  else          state.purchaseDrafts.push(draft);
+
+  pr_currentDraftId = draft.id;
+  saveState();
+  _pr_updateDraftEditingLabel();
+  pr_renderDrafts();
+  showToast('임시 저장되었습니다. (' + items.length + '개 품목)', 'success');
+  saveToSheet().catch(() => {});
+}
+
+/**
+ * 임시저장 목록 테이블 렌더
+ */
+function pr_renderDrafts() {
+  const tbody   = document.getElementById('pr-drafts-tbody');
+  const countEl = document.getElementById('pr-drafts-count');
+  if (!tbody) return;
+
+  const drafts = state.purchaseDrafts || [];
+  if (countEl) countEl.textContent = '총 ' + drafts.length + '건';
+
+  if (drafts.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:20px;">임시 저장된 구매요청이 없습니다.</td></tr>';
+    return;
+  }
+
+  // 최근 저장 순
+  const sorted = [...drafts].sort((a, b) => String(b.savedAt || '').localeCompare(String(a.savedAt || '')));
+
+  tbody.innerHTML = sorted.map(d => {
+    const editing = (d.id === pr_currentDraftId);
+    const proj = (d.projName || '(미선택)') + (d.projCode ? ' (' + d.projCode + ')' : '');
+    return '<tr' + (editing ? ' style="background:rgba(255,179,71,0.08);"' : '') + '>' +
+      '<td style="font-weight:700;">' + _pr_esc(proj) + (editing ? ' <span style="font-size:10px;color:var(--accent4);">✎편집중</span>' : '') + '</td>' +
+      '<td style="font-family:var(--mono);font-size:11px;">' + _pr_esc(d.claimNo || '—') + '</td>' +
+      '<td style="text-align:center;font-family:var(--mono);color:var(--accent4);">' + (d.items ? d.items.length : 0) + '</td>' +
+      '<td style="font-size:11px;color:var(--text2);">' + _pr_esc(d.author || '—') + '</td>' +
+      '<td style="font-size:11px;color:var(--text3);">' + _pr_esc(d.savedAt || '—') + '</td>' +
+      '<td style="text-align:center;white-space:nowrap;">' +
+        '<button class="btn btn-ghost btn-sm" style="padding:2px 6px;" onclick="pr_loadDraft(\'' + d.id + '\')" title="폼으로 불러오기">불러오기</button> ' +
+        '<button class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--accent);" onclick="pr_printDraft(\'' + d.id + '\')" title="인쇄 미리보기">🖨️</button> ' +
+        '<button class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--red);" onclick="pr_deleteDraft(\'' + d.id + '\')" title="삭제">✕</button>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+/** 문자열 HTML 이스케이프 (속성/텍스트 공용) */
+function _pr_esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/**
+ * 초안을 폼으로 불러오기
+ * @param {string} id
+ */
+function pr_loadDraft(id) {
+  const draft = (state.purchaseDrafts || []).find(d => d.id === id);
+  if (!draft) { showToast('초안을 찾을 수 없습니다.', 'error'); return; }
+
+  pr_switchSub('input');
+  pr_populateProjectSelect();
+
+  const setVal = (elId, val) => { const el = document.getElementById(elId); if (el) el.value = val || ''; };
+  setVal('pr-proj-sel', draft.projId ? String(draft.projId) : '');
+  setVal('pr-req-date', draft.reqDate);
+  setVal('pr-claim-no', draft.claimNo);
+  setVal('pr-site',     draft.site);
+  setVal('pr-manager',  draft.manager);
+  setVal('pr-position', draft.position);
+  setVal('pr-phone',    draft.phone);
+
+  // 품목 행 재구성
+  const tbody = document.getElementById('pr-item-tbody');
+  if (tbody) tbody.innerHTML = '';
+  const items = (draft.items && draft.items.length) ? draft.items : [{}];
+  items.forEach(item => {
+    pr_addItemRow();
+    const tr = tbody.lastElementChild;
+    if (!tr) return;
+    const set = (cls, v) => { const inp = tr.querySelector(cls); if (inp) inp.value = v || ''; };
+    set('.pr-item-name', item.itemName);
+    set('.pr-item-spec', item.itemSpec);
+    set('.pr-item-qty',  item.itemQty);
+    set('.pr-item-note', item.itemNote);
+  });
+
+  pr_currentDraftId = draft.id;
+  _pr_updateDraftEditingLabel();
+  pr_renderDrafts();
+  showToast('초안을 불러왔습니다. 품목을 추가하거나 인쇄·저장하세요.', 'success');
+}
+
+/**
+ * 초안 삭제
+ * @param {string} id
+ */
+function pr_deleteDraft(id) {
+  if (!confirm('이 임시저장을 삭제하시겠습니까?')) return;
+  state.purchaseDrafts = (state.purchaseDrafts || []).filter(d => d.id !== id);
+  if (pr_currentDraftId === id) { pr_currentDraftId = null; _pr_updateDraftEditingLabel(); }
+  saveState();
+  pr_renderDrafts();
+  showToast('삭제되었습니다.', 'success');
+  saveToSheet().catch(() => {});
+}
+
+/**
+ * 초안을 바로 인쇄 미리보기
+ * @param {string} id
+ */
+function pr_printDraft(id) {
+  const draft = (state.purchaseDrafts || []).find(d => d.id === id);
+  if (!draft) { showToast('초안을 찾을 수 없습니다.', 'error'); return; }
+  const items = (draft.items || []).map((r, i) => ({
+    itemNo:   i + 1,
+    itemName: r.itemName || '',
+    itemSpec: r.itemSpec || '',
+    itemQty:  r.itemQty  || '',
+    itemNote: r.itemNote || ''
+  }));
+  if (items.length === 0) { showToast('품목이 없습니다.', 'error'); return; }
+  const info = {
+    reqDate:  (draft.reqDate || todayStr()).replace(/-/g, '.'),
+    claimNo:  draft.claimNo || '',
+    projName: draft.projName || '(미선택)',
+    projCode: draft.projCode || '',
+    site:     draft.site    || '',
+    manager:  draft.manager || '',
+    position: draft.position || '',
+    phone:    draft.phone   || ''
+  };
+  const html = pr_buildPrintHTML(info, items);
+  const win  = window.open('', '_blank', 'width=900,height=800');
+  if (!win) { showToast('팝업이 차단되었습니다.', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
 }
 
 /**
@@ -4651,9 +4900,9 @@ function md_enterApp() {
   if (mdFrom && !mdFrom.value) mdFrom.value = today.slice(0, 7) + '-01';
   if (mdTo   && !mdTo.value)   mdTo.value   = today;
 
-  // 관리자만 검사관 필터 노출
+  // 인원별 필터 노출 (전체 열람 지원 — 모든 사용자에게 표시)
   const inspCol = document.getElementById('md-f-insp-col');
-  if (inspCol) inspCol.style.display = currentUser.role === 'admin' ? '' : 'none';
+  if (inspCol) inspCol.style.display = '';
 
   md_refreshProjectFilter();
   md_renderRecent();
@@ -4789,9 +5038,8 @@ function md_renderRecent() {
   const list = document.getElementById('md-recent-list');
   if (!list || !currentUser) return;
   const isAdmin = currentUser.role === 'admin';
-  const base = isAdmin
-    ? state.mdEntries
-    : state.mdEntries.filter(e => e.employeeId === currentUser.id);
+  // 모든 사용자가 전체 작업자의 기록을 열람 가능 (삭제는 작성자·관리자만)
+  const base = state.mdEntries;
   const entries = [...base].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20);
   if (!entries.length) {
     list.innerHTML = '<div style="text-align:center;color:var(--text3);padding:28px;">아직 입력된 기록이 없습니다.</div>';
@@ -4803,7 +5051,7 @@ function md_renderRecent() {
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;margin-bottom:6px;gap:10px;flex-wrap:wrap;">
       <div style="flex:1;min-width:200px;font-size:12px;">
         <strong style="color:var(--accent);">${e.date}</strong>
-        ${isAdmin ? `<span style="color:var(--text3);margin-left:8px;">${md_esc(e.employeeName)}</span>` : ''}
+        <span style="color:var(--text2);margin-left:8px;font-weight:600;">${md_esc(e.employeeName)}</span>
         <span style="color:var(--text3);margin-left:8px;">${md_esc(e.projCode)} ${md_esc(e.projName)}</span>
         <span style="color:var(--text3);margin-left:8px;">${md_esc(e.item)} ${md_esc(e.work)}</span>
         <br>
@@ -4863,11 +5111,8 @@ function md_renderSummary() {
   const to        = document.getElementById('md-f-to')?.value   || '';
   const projFilter = document.getElementById('md-f-proj')?.value || '';
   const inspFilter = document.getElementById('md-f-insp')?.value || '';
-  const isAdmin = currentUser.role === 'admin';
-
-  let data = isAdmin
-    ? [...state.mdEntries]
-    : state.mdEntries.filter(e => e.employeeId === currentUser.id);
+  // 모든 사용자가 전체 작업자의 기록을 열람 가능
+  let data = [...state.mdEntries];
   if (from)        data = data.filter(e => e.date >= from);
   if (to)          data = data.filter(e => e.date <= to);
   if (projFilter)  data = data.filter(e => (e.projName || '') === projFilter);
@@ -4880,11 +5125,11 @@ function md_renderSummary() {
   const totalReg = data.reduce((s, e) => s + (Number(e.regular) || 0), 0);
   const totalOt  = data.reduce((s, e) => s + (Number(e.ot)      || 0), 0);
   const totalMd  = ((totalReg + totalOt * 1.5) / 8).toFixed(2);
-  const colspan  = isAdmin ? 3 : 2;
+  const colspan  = 3;
   let html = `<div style="overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead><tr style="background:var(--surface3);">
-        ${isAdmin ? '<th style="padding:9px 8px;text-align:left;border:1px solid var(--border);color:var(--text2);">이름</th>' : ''}
+        <th style="padding:9px 8px;text-align:left;border:1px solid var(--border);color:var(--text2);">이름</th>
         <th style="padding:9px 8px;text-align:left;border:1px solid var(--border);color:var(--text2);">프로젝트</th>
         <th style="padding:9px 8px;text-align:left;border:1px solid var(--border);color:var(--text2);">작업내용</th>
         <th style="padding:9px 8px;text-align:right;border:1px solid var(--border);color:var(--text2);">정규</th>
@@ -4897,7 +5142,7 @@ function md_renderSummary() {
     const ot  = Number(e.ot)      || 0;
     const md  = ((reg + ot * 1.5) / 8).toFixed(2);
     html += `<tr>
-      ${isAdmin ? `<td style="padding:8px;border:1px solid var(--border);">${md_esc(e.employeeName || '')}</td>` : ''}
+      <td style="padding:8px;border:1px solid var(--border);">${md_esc(e.employeeName || '')}</td>
       <td style="padding:8px;border:1px solid var(--border);color:var(--text2);">${md_esc(e.projCode || '')}</td>
       <td style="padding:8px;border:1px solid var(--border);color:var(--text2);">${md_esc(e.projName || '')}</td>
       <td style="padding:8px;text-align:right;border:1px solid var(--border);">${reg > 0 ? reg.toFixed(1) + 'h' : '-'}</td>
@@ -4921,11 +5166,13 @@ function md_refreshProjectFilter() {
   const usedNames = [...new Set(state.mdEntries.map(e => e.projName || '').filter(Boolean))].sort();
   sel.innerHTML = '<option value="">전체 프로젝트</option>' +
     usedNames.map(n => `<option value="${md_esc(n)}">${md_esc(n)}</option>`).join('');
-  // 관리자 검사관 필터
+  // 인원별 필터 (모든 사용자 이용 가능)
   const inspSel = document.getElementById('md-f-insp');
-  if (inspSel && currentUser?.role === 'admin') {
+  if (inspSel) {
+    const prevVal = inspSel.value;
     inspSel.innerHTML = '<option value="">전체 인원</option>' +
       state.employees.map(e => `<option value="${e.id}">${md_esc(e.name)} ${md_esc(e.position || '')}</option>`).join('');
+    inspSel.value = prevVal;
   }
 }
 
@@ -4967,10 +5214,8 @@ function md_deleteEntry(id) {
 
 function md_exportCSV() {
   if (!currentUser) return;
-  const isAdmin = currentUser.role === 'admin';
-  const data = isAdmin
-    ? state.mdEntries
-    : state.mdEntries.filter(e => e.employeeId === currentUser.id);
+  // 모든 사용자가 전체 작업자의 기록을 내보낼 수 있음
+  const data = state.mdEntries;
   if (!data.length) { showToast('내보낼 데이터가 없습니다.', 'error'); return; }
   const headers = ['날짜', '이름', '프로젝트코드', '프로젝트명', '아이템', '업무', '정규(h)', '야근(h)', 'M/D'];
   const rows = data.map(e => [
