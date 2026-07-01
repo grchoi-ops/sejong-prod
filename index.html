@@ -92,6 +92,9 @@
           <option value="열람용">열람용</option>
           <option value="일반">일반</option>
         </select>
+        <label style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:3px;white-space:nowrap;" title="입사일 이전 날짜는 자동으로 휴무 처리됩니다 (선택)">입사일
+          <input id="new-emp-hire" type="date" style="font-size:11px;">
+        </label>
         <button class="btn btn-primary btn-sm" onclick="addEmployee()">+ 직원 추가</button>
       </div>
     </div>
@@ -447,8 +450,10 @@
       <button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="pr_addItemRow()">+ 품목 추가</button>
 
       <!-- 액션 버튼 -->
-      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;align-items:center;">
+        <span id="pr-draft-editing" style="display:none;font-size:11px;color:var(--accent4);margin-right:auto;"></span>
         <button class="btn btn-ghost" onclick="pr_resetForm()">🗑️ 초기화</button>
+        <button class="btn btn-ghost" style="color:var(--accent4);border-color:var(--accent4);" onclick="pr_saveDraft()" title="작성 중인 내용을 임시 보관합니다 (인쇄·저장 전)">💾 임시저장</button>
         <button class="btn btn-primary" onclick="pr_printFromForm()">🖨️ 인쇄 미리보기</button>
         <button id="pr-save-btn" class="btn btn-success" onclick="pr_saveEntry()">저장</button>
       </div>
@@ -463,8 +468,32 @@
           1. 프로젝트를 선택하면 담당자·현장·전화번호가 자동 입력됩니다.<br>
           2. 청구번호는 프로젝트 접두사 기반으로 자동 생성됩니다. 직접 수정도 가능합니다.<br>
           3. 품목을 추가하고 저장하면 구매 데이터 탭에 기록됩니다.<br>
-          4. 인쇄 미리보기로 A4 양식을 확인한 후 저장하세요.
+          4. 인쇄 미리보기로 A4 양식을 확인한 후 저장하세요.<br>
+          5. 💾 임시저장: 생각날 때마다 품목을 추가해 두었다가, 모이면 불러와서 인쇄·저장할 수 있습니다.
         </div>
+      </div>
+    </div>
+
+    <!-- 임시 저장 목록 -->
+    <div class="pr-form-card" id="pr-drafts-card" style="margin-top:16px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+        <div class="card-title" style="margin:0;">💾 임시 저장 목록</div>
+        <div style="margin-left:auto;font-size:12px;color:var(--text3);" id="pr-drafts-count"></div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="pr-db-table">
+          <thead>
+            <tr>
+              <th>프로젝트</th>
+              <th style="width:130px;">청구번호</th>
+              <th style="width:70px;text-align:center;">품목수</th>
+              <th style="width:90px;">작성자</th>
+              <th style="width:130px;">저장시각</th>
+              <th style="width:180px;text-align:center;">작업</th>
+            </tr>
+          </thead>
+          <tbody id="pr-drafts-tbody"></tbody>
+        </table>
       </div>
     </div>
   </div>
