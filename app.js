@@ -891,6 +891,7 @@ function setBulkAbsence() {
   if (!state.dailyData[date]) state.dailyData[date] = { emp: {}, proj: {} };
   state.employees.forEach(emp => {
     if (emp.longTermTrip) return;
+    if (isPreHire(emp, date)) return;  // 입사 전 인원은 숨김 대상 — 기록 생성 안 함
     if (!state.dailyData[date].emp[emp.id]) {
       state.dailyData[date].emp[emp.id] = { status: '휴무', overtimeHours: 0, projId: '', onTrip: false, work: '', halfDayHours: 0 };
     } else {
@@ -923,7 +924,7 @@ function loadDailyData() {
     const empSection = state.dailyData[date].emp;
     if (Object.keys(empSection).length === 0) {
       state.employees.forEach(emp => {
-        if (!emp.longTermTrip) {
+        if (!emp.longTermTrip && !isPreHire(emp, date)) {
           empSection[emp.id] = { status: '휴무', overtimeHours: 0, projId: '', onTrip: false, work: '', halfDayHours: 0 };
         }
       });
@@ -954,6 +955,8 @@ function renderEmpInputGrid(empData, date) {
   let lastDiv = null;
 
   sorted.forEach(emp => {
+    // [입사일] 입사 전 날짜에는 그리드·인원현황에서 완전히 숨김
+    if (isPreHire(emp, date)) return;
     const ed = empData[emp.id] || defaultEmpDay(emp, date);
     const d = DIVISIONS[emp.div] || { label:emp.div, cls:'' };
     // [단계4] 장기출장자는 메인 그리드에서 제외하고 별도 섹션에 표시
@@ -1332,6 +1335,8 @@ function updateStats() {
   const divCount = { 제관:0, 용접:0, 보조:0, 가공:0, 구동:0, 공사:0 };
 
   state.employees.forEach(emp => {
+    // [입사일] 입사 전 날짜에는 인원 현황 집계에서 제외
+    if (isPreHire(emp, date)) return;
     const ed = data[emp.id] || defaultEmpDay(emp, date);
     const isAbsent = ed.status === '휴무' || ed.status === '연차';
     if (!isAbsent) {
@@ -1345,7 +1350,7 @@ function updateStats() {
     }
   });
 
-  document.getElementById('s-total').textContent = state.employees.length;
+  document.getElementById('s-total').textContent = state.employees.filter(e => !isPreHire(e, date)).length;
   document.getElementById('s-present').textContent = present;
   document.getElementById('s-absent').textContent = absent;
   document.getElementById('s-overtime').textContent = overtime;
@@ -1463,6 +1468,8 @@ function buildReportHTML(date) {
   const tripNoProjEmps = [];
 
   state.employees.forEach(emp => {
+    // [입사일] 입사 전 날짜에는 업무일지 집계에서 제외
+    if (isPreHire(emp, date)) return;
     const ed = empData[emp.id] || defaultEmpDay(emp, date);
     if (ed.status === '휴무') {}
     else if (ed.status === '연차') {}
@@ -1483,6 +1490,8 @@ function buildReportHTML(date) {
   });
 
   const empRows = state.employees.map(emp => {
+    // [입사일] 입사 전 날짜에는 업무일지에 이름을 표시하지 않음
+    if (isPreHire(emp, date)) return '';
     // 장기출장자 별도 표시
     if (emp.longTermTrip) {
       const locLabel = (emp.tripLocation ? emp.tripLocation + ' ' : '') + '장기출장';
@@ -2590,6 +2599,8 @@ function renderCalendar(year, month) {
     if (data) {
       const empData = data.emp || {};
       state.employees.forEach(emp => {
+        // [입사일] 입사 전 날짜는 달력 집계에서 제외
+        if (isPreHire(emp, date)) return;
         const ed = empData[emp.id] || defaultEmpDay(emp, date);
         if (ed.status === '휴무' || ed.status === '연차') absent++;
         else present++;
