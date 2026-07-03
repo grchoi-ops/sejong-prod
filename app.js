@@ -49,7 +49,7 @@ const KR_HOLIDAYS = new Set([
   '2026-05-05',                                     // 어린이날
   '2026-05-24','2026-05-25',                        // 부처님오신날 + 대체
   '2026-06-03',                                     // 제9회 전국동시지방선거일 (임시공휴일)
-  '2026-06-06','2026-06-08',                        // 현충일 + 대체
+  '2026-06-06',                                     // 현충일 (현충일은 대체공휴일 대상 아님)
   '2026-08-15','2026-08-17',                        // 광복절 + 대체
   '2026-09-24','2026-09-25','2026-09-26','2026-09-28', // 추석 연휴 + 대체
   '2026-10-03','2026-10-05',                        // 개천절 + 대체
@@ -1800,6 +1800,8 @@ function renderStats() {
     state.employees.forEach(emp => {
       // [단계8] 장기출장자 집계 제외
       if (emp.longTermTrip) return;
+      // [입사일] 입사 전 날짜는 특근·잔업·맨파워 등 모든 집계에서 제외
+      if (isPreHire(emp, dateStr)) return;
 
       const ed = empData[emp.id] || { status: '출근', overtimeHours: 0, onTrip: false };
 
@@ -2138,6 +2140,8 @@ function printMonthlyStats() {
     state.employees.forEach(emp => {
       // [단계8] 장기출장자 집계 제외
       if (emp.longTermTrip) return;
+      // [입사일] 입사 전 날짜는 집계에서 제외
+      if (isPreHire(emp, dateStr)) return;
       const ed = empData[emp.id] || { status: '출근', overtimeHours: 0 };
       // [단계8] 휴무는 비근무일 — 집계 미포함
       if (ed.status === '휴무') return;
@@ -2434,6 +2438,8 @@ function exportMonthlyExcel() {
       state.employees.forEach(emp => {
         // [단계8] 장기출장자 집계 제외
         if (emp.longTermTrip) return;
+        // [입사일] 입사 전 날짜는 집계·출근현황 시트에서 제외
+        if (isPreHire(emp, dateStr)) return;
         const ed = empData[emp.id] || { status: '출근', overtimeHours: 0 };
         const divInfo = DIVISIONS[emp.div] || { label: emp.div };
         attendanceRows.push({
