@@ -1790,6 +1790,8 @@ function renderStats() {
     state.employees.forEach(emp => {
       // [단계8] 장기출장자 집계 제외
       if (emp.longTermTrip) return;
+      // [입사일] 입사 전 날짜는 특근·잔업·맨파워 등 모든 집계에서 제외
+      if (isPreHire(emp, dateStr)) return;
 
       const ed = empData[emp.id] || { status: '출근', overtimeHours: 0, onTrip: false };
 
@@ -2128,6 +2130,8 @@ function printMonthlyStats() {
     state.employees.forEach(emp => {
       // [단계8] 장기출장자 집계 제외
       if (emp.longTermTrip) return;
+      // [입사일] 입사 전 날짜는 집계에서 제외
+      if (isPreHire(emp, dateStr)) return;
       const ed = empData[emp.id] || { status: '출근', overtimeHours: 0 };
       // [단계8] 휴무는 비근무일 — 집계 미포함
       if (ed.status === '휴무') return;
@@ -2424,6 +2428,8 @@ function exportMonthlyExcel() {
       state.employees.forEach(emp => {
         // [단계8] 장기출장자 집계 제외
         if (emp.longTermTrip) return;
+        // [입사일] 입사 전 날짜는 집계·출근현황 시트에서 제외
+        if (isPreHire(emp, dateStr)) return;
         const ed = empData[emp.id] || { status: '출근', overtimeHours: 0 };
         const divInfo = DIVISIONS[emp.div] || { label: emp.div };
         attendanceRows.push({
