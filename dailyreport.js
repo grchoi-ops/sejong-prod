@@ -618,18 +618,19 @@ function drPrint() {
   const css = [
     '@page { size: A4 portrait; margin: 0; }',
     'html, body { margin:0; padding:0; }',
+    ':root { --dr-scale: 1; }',
     'body { font-family:"맑은 고딕","Malgun Gothic",sans-serif; color:#14263A; -webkit-print-color-adjust:exact; print-color-adjust:exact; }',
-    '.dr-print-sheet { width:210mm; min-height:297mm; padding:12mm 12mm; box-sizing:border-box; font-size:10.5pt; line-height:1.4; }',
+    '.dr-print-sheet { width:210mm; min-height:297mm; padding:12mm 12mm; box-sizing:border-box; font-size:calc(10.5pt * var(--dr-scale)); line-height:1.4; }',
     'table.dr-print-head { width:calc(100% - 1px); border-collapse:collapse; table-layout:fixed; margin-bottom:5mm; }',
     '.dr-print-head th, .dr-print-head td { border:1px solid #243447; box-sizing:border-box; }',
-    '.dr-print-head th { height:8mm; font-size:11pt; text-align:center; background:#F2F4F6; }',
+    '.dr-print-head th { height:8mm; font-size:calc(11pt * var(--dr-scale)); text-align:center; background:#F2F4F6; }',
     '.dr-print-head .dr-print-signbox { height:17mm; }',
     '.dr-print-titlecell { padding:10px 14px; vertical-align:middle; }',
-    '.dr-print-doctitle { font-size:20pt; font-weight:700; letter-spacing:10px; text-indent:10px; margin-bottom:5px; }',
-    '.dr-print-dept { font-size:13pt; font-weight:600; letter-spacing:3px; margin-bottom:4px; }',
-    '.dr-print-repdate { font-size:10.5pt; }',
+    '.dr-print-doctitle { font-size:calc(20pt * var(--dr-scale)); font-weight:700; letter-spacing:10px; text-indent:10px; margin-bottom:5px; }',
+    '.dr-print-dept { font-size:calc(13pt * var(--dr-scale)); font-weight:600; letter-spacing:3px; margin-bottom:4px; }',
+    '.dr-print-repdate { font-size:calc(10.5pt * var(--dr-scale)); }',
     '.dr-print-block { break-inside:avoid; margin-bottom:6mm; }',
-    '.dr-print-sec { font-size:12pt; font-weight:700; margin-bottom:3mm; }',
+    '.dr-print-sec { font-size:calc(12pt * var(--dr-scale)); font-weight:700; margin-bottom:3mm; }',
     '.dr-print-sec::before { content:"■ "; }',
     'table.dr-print-tbl { width:calc(100% - 1px); border-collapse:collapse; table-layout:fixed; }',
     '.dr-print-tbl th, .dr-print-tbl td { border:1px solid #9AA5B1; padding:4px 6px; vertical-align:top; word-break:break-word; white-space:pre-wrap; box-sizing:border-box; }',
@@ -642,6 +643,7 @@ function drPrint() {
 
   const bodyHTML = `
     <div class="dr-print-sheet">
+      <div class="dr-print-content">
       <table class="dr-print-head">
         <colgroup><col style="width:58%"><col style="width:14%"><col style="width:14%"><col style="width:14%"></colgroup>
         <tr>
@@ -657,13 +659,41 @@ function drPrint() {
         </tr>
       </table>
       ${DR_SECTIONS.map(s => drBuildPrintTable(s, rec[s])).join('')}
+      </div>
     </div>`;
+
+  // 1장(297mm) 대비 애매하게 넘치면 글자 크기를 줄여 1장에 맞추고,
+  // 그보다 많이 넘치면(줄여도 안 맞으면) 축소를 포기하고 섹션 단위로 다음 페이지로
+  // 넘어가게 둔다 (섹션마다 break-inside:avoid가 걸려 있어 표 중간에서 잘리지 않는다).
+  // .dr-print-sheet는 min-height:297mm라 실제 내용이 짧아도 항상 1장 높이로 측정되므로,
+  // 내부 콘텐츠만 감싸는 .dr-print-content를 따로 두어 실제 내용 높이를 정확히 잰다.
+  const printScript = `
+    window.onload = function() {
+      var content = document.querySelector('.dr-print-content');
+      var pageContentHeightPx = (297 - 24) * 96 / 25.4; // 297mm - 상하 패딩 12mm*2
+      var ratio = content.scrollHeight / pageContentHeightPx;
+      if (ratio > 1 && ratio <= 1.2) {
+        // 섹션 경계에서 남는 공간이 애매해 통째로 다음 페이지로 밀리는 것까지
+        // 감안해 목표치를 살짝 여유 있게 잡는다 (5%).
+        var target = pageContentHeightPx * 0.95;
+        var scale = 1;
+        while (scale > 0.85 && content.scrollHeight > target) {
+          scale = Math.max(0.85, scale - 0.02);
+          document.documentElement.style.setProperty('--dr-scale', scale);
+        }
+        if (content.scrollHeight > target) {
+          document.documentElement.style.setProperty('--dr-scale', 1);
+        }
+      }
+      window.print();
+    };
+  `;
 
   const html = '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">' +
     '<title>일일업무보고서_생산부_' + _drDate + '</title>' +
     '<style>' + css + '</style></head><body>' +
     bodyHTML +
-    '<script>window.onload=function(){window.print();}<\/script>' +
+    '<script>' + printScript + '<\/script>' +
     '</body></html>';
 
   const win = window.open('', '_blank', 'width=900,height=1000');
