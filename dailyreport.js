@@ -117,7 +117,6 @@ function drBuildShell() {
               <div class="dr-doctitle">일일업무보고서</div>
               <div class="dr-dept">[ <span class="dr-cell" contenteditable="plaintext-only" id="dr-dept">생산부</span> ]</div>
               <div class="dr-repdate">보고일자 : <span id="dr-repdate-txt"></span></div>
-              <div class="dr-writerline">작성자 : <span class="dr-cell" contenteditable="plaintext-only" id="dr-writer"></span></div>
             </td>
             <th>작성</th><th>검토</th><th>결재</th>
           </tr>
@@ -128,7 +127,7 @@ function drBuildShell() {
 
         ${DR_SECTIONS.map(sec => `
         <section class="dr-block${sec === 'heavy' ? ' dr-heavy' : ''}" data-key="${sec}">
-          <h2 class="dr-sec">${DR_TITLES[sec]}${sec === 'heavy' ? ' <span class="dr-hint">중량 · 인양장비 · 슬링 규격을 반드시 기재</span>' : ''}</h2>
+          <h2 class="dr-sec">${DR_TITLES[sec]}</h2>
           <table class="dr-tbl">
             <colgroup><col style="width:17%"><col style="width:57%"><col style="width:11%"><col style="width:15%"></colgroup>
             <thead><tr>${DR_COLS[sec].map(c => `<th>${c}</th>`).join('')}</tr></thead>
@@ -355,7 +354,7 @@ function drRecalcFit() {
 function drCollect() {
   const o = {
     dept: document.getElementById('dr-dept').textContent.trim() || '생산부',
-    writer: document.getElementById('dr-writer').textContent.trim(),
+    writer: localStorage.getItem('sejong_user_name') || '',
     updatedAt: Date.now()
   };
   DR_SECTIONS.forEach(s => { o[s] = drReadSection(s).filter(drNotEmpty); });
@@ -365,12 +364,10 @@ function drCollect() {
 function drApplyRecord(rec) {
   _drLoading = true;
   document.getElementById('dr-dept').textContent = (rec && rec.dept) || '생산부';
-  document.getElementById('dr-writer').textContent = (rec && rec.writer) || (localStorage.getItem('sejong_user_name') || '');
   DR_SECTIONS.forEach(s => drWriteSection(s, rec ? rec[s] : []));
   _drLoading = false;
   drSetCellsEditable(!drIsViewer());
   document.getElementById('dr-dept').contentEditable = drIsViewer() ? 'false' : 'plaintext-only';
-  document.getElementById('dr-writer').contentEditable = drIsViewer() ? 'false' : 'plaintext-only';
   drRecalcFit();
 }
 
@@ -605,7 +602,7 @@ function drBuildPrintTable(sec, rows) {
     </tr>`;
   return `
     <section class="dr-print-block${sec === 'heavy' ? ' dr-print-heavy' : ''}">
-      <h2 class="dr-print-sec">${DR_TITLES[sec]}${sec === 'heavy' ? ' <span class="dr-print-hint">(중량·인양장비·슬링 규격 기재)</span>' : ''}</h2>
+      <h2 class="dr-print-sec">${DR_TITLES[sec]}</h2>
       <table class="dr-print-tbl">
         <colgroup><col style="width:17%"><col style="width:57%"><col style="width:11%"><col style="width:15%"></colgroup>
         <thead><tr>${DR_COLS[sec].map(c => `<th>${c}</th>`).join('')}</tr></thead>
@@ -630,11 +627,10 @@ function drPrint() {
     '.dr-print-titlecell { padding:10px 14px; vertical-align:middle; }',
     '.dr-print-doctitle { font-size:20pt; font-weight:700; letter-spacing:10px; text-indent:10px; margin-bottom:5px; }',
     '.dr-print-dept { font-size:13pt; font-weight:600; letter-spacing:3px; margin-bottom:4px; }',
-    '.dr-print-repdate, .dr-print-writer { font-size:10.5pt; }',
+    '.dr-print-repdate { font-size:10.5pt; }',
     '.dr-print-block { break-inside:avoid; margin-bottom:6mm; }',
     '.dr-print-sec { font-size:12pt; font-weight:700; margin-bottom:3mm; }',
     '.dr-print-sec::before { content:"■ "; }',
-    '.dr-print-hint { font-size:9pt; font-weight:400; color:#5C6B7A; }',
     'table.dr-print-tbl { width:calc(100% - 1px); border-collapse:collapse; table-layout:fixed; }',
     '.dr-print-tbl th, .dr-print-tbl td { border:1px solid #9AA5B1; padding:4px 6px; vertical-align:top; word-break:break-word; white-space:pre-wrap; box-sizing:border-box; }',
     '.dr-print-tbl th { background:#EEF1F4; text-align:center; font-weight:600; border-color:#243447; }',
@@ -653,7 +649,6 @@ function drPrint() {
             <div class="dr-print-doctitle">일일업무보고서</div>
             <div class="dr-print-dept">[ ${drEsc(rec.dept)} ]</div>
             <div class="dr-print-repdate">보고일자 : ${dateStr}</div>
-            <div class="dr-print-writer">작성자 : ${drEsc(rec.writer)}</div>
           </td>
           <th>작성</th><th>검토</th><th>결재</th>
         </tr>
@@ -700,13 +695,11 @@ function drInjectStyle() {
     .dr-titlecell { padding:11px 14px; vertical-align:middle; }
     .dr-doctitle { font-size:1.8em; font-weight:700; letter-spacing:.5em; text-indent:.5em; margin:0 0 6px; }
     .dr-dept { font-size:1.05em; font-weight:600; letter-spacing:.18em; margin-bottom:4px; }
-    .dr-repdate, .dr-writerline { font-size:.9em; color:#333; margin-top:2px; }
-    .dr-writerline .dr-cell { display:inline-block; min-width:60px; }
+    .dr-repdate { font-size:.9em; color:#333; margin-top:2px; }
 
     .dr-block { margin-bottom:16px; }
     .dr-sec { margin:0 0 7px; font-size:1.05em; font-weight:700; display:flex; align-items:baseline; gap:7px; }
     .dr-sec::before { content:"■"; color:#243447; font-size:.8em; }
-    .dr-hint { font-size:.72em; font-weight:400; color:#5C6B7A; }
 
     table.dr-tbl { width:100%; border-collapse:collapse; table-layout:fixed; }
     .dr-tbl th, .dr-tbl td { border:1px solid #9AA5B1; padding:4px 6px; vertical-align:top; box-sizing:border-box; }
