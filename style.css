@@ -65,9 +65,12 @@ body {
   display: flex;
   gap: 2px;
   margin-left: auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 .tab-btn {
-  padding: 8px 18px;
+  padding: 8px 14px;
   border: none;
   background: transparent;
   color: var(--text2);

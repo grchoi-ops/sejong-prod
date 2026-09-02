@@ -46,6 +46,7 @@
     <button class="tab-btn" data-tab="manday">⑧ M/D</button>
     <button class="tab-btn" data-tab="overtime">⑨ 특근보고서</button>
     <button class="tab-btn" data-tab="jangbi">⑩ 장비관리</button>
+    <button class="tab-btn" data-tab="dailyreport">⑪ 일일보고서</button>
   </nav>
 </header>
 
@@ -730,6 +731,13 @@
   <div id="jangbi-root" style="min-height:100vh;"></div>
 </section>
 
+<!-- ══════════════════════════════════════════
+     탭⑪: 일일업무보고서
+══════════════════════════════════════════ -->
+<section id="tab-dailyreport" class="tab-panel">
+  <div id="dr-root"></div>
+</section>
+
 <!-- M/D 로그인 오버레이 -->
 <div id="md-login-overlay"
   style="display:none;position:fixed;inset:0;background:rgba(15,17,23,0.96);align-items:center;justify-content:center;z-index:5000;">
@@ -1154,5 +1162,6 @@ table{border-collapse:collapse;width:100%;}
 </script>
 <img id="jb-logo-src" src="ci_logo6.png" style="display:none;" />
 <script src="jangbi.js"></script>
+<script src="dailyreport.js"></script>
 </body>
 </html>

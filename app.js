@@ -67,6 +67,7 @@ let state = {
   purchaseDB: [],
   purchaseDrafts: [],  // 구매요청 임시저장 (미확정 초안)
   mdEntries: [],
+  dailyReports: {},  // { 'YYYY-MM-DD': { dept, writer, today:[], heavy:[], next:[], updatedAt } }
   _lastSyncTime: null,
   _statsYear: new Date().getFullYear(),
   _statsMonth: new Date().getMonth() + 1
@@ -121,7 +122,7 @@ function _updateHeaderUser() {
 
 function _applyRoleUI() {
   const role = currentUser?.mdRole || '일반';
-  const allRestrictedTabs = ['settings', 'wo', 'daily', 'report', 'purchase', 'dashboard', 'stats'];
+  const allRestrictedTabs = ['settings', 'wo', 'daily', 'report', 'purchase', 'dashboard', 'stats', 'dailyreport'];
   const inspectorHiddenTabs = ['settings', 'wo', 'report', 'purchase'];
   const viewerHiddenTabs = ['settings', 'purchase', 'manday'];
 
@@ -236,6 +237,7 @@ function setupTabs() {
       if (tab === 'manday')    md_initTab();
       if (tab === 'overtime')  ot_init();
       if (tab === 'jangbi')    jangbiInit();
+      if (tab === 'dailyreport') drInit();
       checkAlerts();
     });
   });
@@ -290,7 +292,8 @@ function saveLocal() {
     dailyData:  state.dailyData,
     purchaseDB: state.purchaseDB || [],
     purchaseDrafts: state.purchaseDrafts || [],
-    mdEntries:  state.mdEntries  || []
+    mdEntries:  state.mdEntries  || [],
+    dailyReports: state.dailyReports || {}
   }));
 }
 
@@ -305,6 +308,7 @@ function loadLocal() {
     state.purchaseDB = d.purchaseDB || [];
     state.purchaseDrafts = d.purchaseDrafts || [];
     state.mdEntries  = d.mdEntries  || [];
+    state.dailyReports = d.dailyReports || {};
     migrateStateFields();
     return true;
   }
@@ -327,6 +331,7 @@ function migrateStateFields() {
   });
 
   if (!Array.isArray(state.mdEntries)) state.mdEntries = [];
+  if (!state.dailyReports || typeof state.dailyReports !== 'object') state.dailyReports = {};
 
   state.projects.forEach(p => {
     if (p.site        === undefined) p.site        = '';
@@ -442,6 +447,7 @@ async function loadFromSheet() {
       state.purchaseDB = d.purchaseDB || [];
       state.purchaseDrafts = d.purchaseDrafts || [];
       state.mdEntries  = d.mdEntries  || [];
+      state.dailyReports = d.dailyReports || {};
       state._lastSyncTime = d.lastModified || new Date().toISOString();
       migrateStateFields();
       saveLocal();
@@ -499,6 +505,7 @@ async function saveToSheet() {
         purchaseDB:   state.purchaseDB || [],
         purchaseDrafts: state.purchaseDrafts || [],
         mdEntries:    state.mdEntries  || [],
+        dailyReports: state.dailyReports || {},
         lastModified: new Date().toISOString(),
         modifiedBy:   localStorage.getItem('sejong_user_name') || '알 수 없음'
       })
@@ -3126,7 +3133,8 @@ function exportData() {
     exported: new Date().toISOString(),
     employees: state.employees,
     projects: state.projects,
-    dailyData: state.dailyData
+    dailyData: state.dailyData,
+    dailyReports: state.dailyReports || {}
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -3148,10 +3156,12 @@ function importData(event) {
       state.employees = data.employees || [];
       state.projects = data.projects || [];
       state.dailyData = data.dailyData || {};
+      state.dailyReports = data.dailyReports || {};
       saveState();
       renderEmployees();
       renderProjects();
       loadDailyData();
+      if (typeof drRefresh === 'function') drRefresh();
       showToast('데이터 불러오기 완료', 'success');
     } catch {
       showToast('파일 형식이 올바르지 않습니다.', 'error');
