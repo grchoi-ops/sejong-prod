@@ -68,6 +68,8 @@ function drApplyRolePermissions() {
   if (notice) notice.hidden = !viewer;
   const carryBtn = document.getElementById('dr-carry-btn');
   if (carryBtn) carryBtn.disabled = !!viewer;
+  const saveBtn = document.getElementById('dr-save-btn');
+  if (saveBtn) saveBtn.style.display = viewer ? 'none' : '';
   drSetCellsEditable(!viewer);
 }
 
@@ -93,6 +95,7 @@ function drBuildShell() {
           <button id="dr-next" title="익일">›</button>
         </div>
         <div id="dr-dow" style="font-size:13px;color:var(--text2);"></div>
+        <button class="btn btn-success btn-sm" id="dr-save-btn" title="로컬 저장 + 서버 저장을 즉시 실행합니다 (Ctrl+S)">✓ 저장</button>
         <button class="btn btn-ghost btn-sm" id="dr-today-btn">오늘</button>
         <button class="btn btn-ghost btn-sm" id="dr-carry-btn" title="금일 진행상황을 익일 계획으로 복사">익일 계획으로 복사</button>
         <div style="margin-left:auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
@@ -206,6 +209,7 @@ function drBuildShell() {
   document.getElementById('dr-date').addEventListener('change', e => drLoad(e.target.value));
   document.getElementById('dr-prev').addEventListener('click', () => drLoad(drShift(_drDate, -1)));
   document.getElementById('dr-next').addEventListener('click', () => drLoad(drShift(_drDate, 1)));
+  document.getElementById('dr-save-btn').addEventListener('click', drSaveToServer);
   document.getElementById('dr-today-btn').addEventListener('click', () => drLoad(drTodayStr()));
   document.getElementById('dr-carry-btn').addEventListener('click', drCarryToNext);
   document.getElementById('dr-print-btn').addEventListener('click', drPrint);
@@ -220,10 +224,7 @@ function drBuildShell() {
   root.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
       e.preventDefault();
-      if (drIsViewer()) return;
-      clearTimeout(_drSaveTimer);
-      drSaveNow();
-      drToast('저장했습니다');
+      drSaveToServer();
     }
   });
 }
@@ -431,6 +432,25 @@ function drSaveNow() {
 function drUpdateSaveStatus(text) {
   const el = document.getElementById('dr-save-status');
   if (el) el.textContent = text;
+}
+
+// ✓ 저장 버튼 / Ctrl+S — 로컬 즉시 저장 + 서버(Supabase) 즉시 저장 (③워크오더·④일일 입력의 saveDailyData()와 동일한 흐름)
+async function drSaveToServer() {
+  if (drIsViewer()) return;
+  clearTimeout(_drSaveTimer);
+  drSaveNow();
+
+  const btn = document.getElementById('dr-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
+  drToast('서버에 저장 중...');
+  try {
+    await saveToSheet();
+    drToast('저장 완료');
+  } catch (e) {
+    drToast('서버 저장 실패 (로컬엔 저장됨)');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✓ 저장'; }
+  }
 }
 
 function drCarryToNext() {
