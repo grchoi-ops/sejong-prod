@@ -260,6 +260,9 @@ const API_BASE = 'https://sejong-prod.vercel.app';
 
 let _isSyncing = false;
 let _pendingSync = false;
+let _pendingSyncFields = null;
+const ALL_SYNC_FIELDS = ['employees', 'projects', 'dailyData', 'purchaseDB', 'purchaseDrafts', 'mdEntries', 'dailyReports'];
+const _SYNC_FIELD_DEFAULTS = { purchaseDB: [], purchaseDrafts: [], mdEntries: [], dailyReports: {} };
 
 function setSyncStatus(status, msg) {
   const el = document.getElementById('sync-status');
@@ -477,8 +480,16 @@ async function checkConflict() {
   return { conflict: false };
 }
 
+// 전체 상태를 서버에 저장 (모든 탭의 데이터를 함께 반영)
 async function saveToSheet() {
-  if (_isSyncing) { _pendingSync = true; return; }
+  return saveFieldsToSheet(ALL_SYNC_FIELDS);
+}
+
+// 지정한 필드만 서버에 반영한다. 각 탭의 저장 버튼이 자기 데이터에 해당하는
+// 필드만 넘기면, 그 순간 메모리에 있는 다른 탭의(아직 저장 안 됐을 수도 있는)
+// 데이터는 건드리지 않는다. /api/save는 요청 본문에 담긴 키만 각각 upsert한다.
+async function saveFieldsToSheet(fields) {
+  if (_isSyncing) { _pendingSync = true; _pendingSyncFields = fields; return; }
   _isSyncing = true;
   setSyncStatus('syncing', '저장 중...');
   try {
@@ -495,20 +506,15 @@ async function saveToSheet() {
       );
       if (!ok) { _isSyncing = false; setSyncStatus('idle', '저장 취소됨'); return; }
     }
+    const body = {
+      lastModified: new Date().toISOString(),
+      modifiedBy:   localStorage.getItem('sejong_user_name') || '알 수 없음'
+    };
+    fields.forEach(f => { body[f] = state[f] !== undefined ? state[f] : _SYNC_FIELD_DEFAULTS[f]; });
     const res = await fetch(API_BASE + '/api/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        employees:    state.employees,
-        projects:     state.projects,
-        dailyData:    state.dailyData,
-        purchaseDB:   state.purchaseDB || [],
-        purchaseDrafts: state.purchaseDrafts || [],
-        mdEntries:    state.mdEntries  || [],
-        dailyReports: state.dailyReports || {},
-        lastModified: new Date().toISOString(),
-        modifiedBy:   localStorage.getItem('sejong_user_name') || '알 수 없음'
-      })
+      body: JSON.stringify(body)
     });
     const json = await res.json();
     if (!json.success) throw new Error(json.error || '저장 실패');
@@ -518,7 +524,12 @@ async function saveToSheet() {
     setSyncStatus('error', '저장 실패: ' + e.message);
   } finally {
     _isSyncing = false;
-    if (_pendingSync) { _pendingSync = false; saveToSheet(); }
+    if (_pendingSync) {
+      _pendingSync = false;
+      const pendingFields = _pendingSyncFields || ALL_SYNC_FIELDS;
+      _pendingSyncFields = null;
+      saveFieldsToSheet(pendingFields);
+    }
   }
 }
 // 통합 saveState: 로컬만 즉시 저장 (서버는 버튼으로만)
@@ -1426,7 +1437,7 @@ async function saveDailyData() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
   showToast('서버에 저장 중...', '');
   try {
-    await saveToSheet();
+    await saveFieldsToSheet(['dailyData']);
     showToast('저장 완료', 'success');
   } catch(e) {
     showToast('서버 저장 실패 (로컬엔 저장됨)', 'error');
@@ -2966,7 +2977,7 @@ async function saveWoData() {
   const btn = document.getElementById('wo-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
   try {
-    await saveToSheet();
+    await saveFieldsToSheet(['dailyData']);
     showToast('저장 완료', 'success');
   } catch(e) {
     showToast('서버 저장 실패 (로컬엔 저장됨)', 'error');
@@ -4162,7 +4173,7 @@ async function pr_saveEntry() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
 
   try {
-    await saveToSheet();
+    await saveFieldsToSheet(['purchaseDB', 'purchaseDrafts']);
     showToast(items.length + '개 품목 저장 완료', 'success');
     pr_resetForm();
     pr_renderDrafts();
@@ -4252,7 +4263,7 @@ function pr_saveDraft() {
   _pr_updateDraftEditingLabel();
   pr_renderDrafts();
   showToast('임시 저장되었습니다. (' + items.length + '개 품목)', 'success');
-  saveToSheet().catch(() => {});
+  saveFieldsToSheet(['purchaseDrafts']).catch(() => {});
 }
 
 /**
@@ -4351,7 +4362,7 @@ function pr_deleteDraft(id) {
   saveState();
   pr_renderDrafts();
   showToast('삭제되었습니다.', 'success');
-  saveToSheet().catch(() => {});
+  saveFieldsToSheet(['purchaseDrafts']).catch(() => {});
 }
 
 /**
