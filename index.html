@@ -773,7 +773,6 @@
      ⑨ 특근보고서 기능
 ════════════════════════════════ -->
 <script>
-const OT_KEY = 'sejong_overtime_reports';
 let ot_rowCount = 0;
 
 function ot_init() {
@@ -920,18 +919,19 @@ function ot_save() {
   data.id      = Date.now().toString();
   data.savedAt = new Date().toISOString();
 
-  const list = JSON.parse(localStorage.getItem(OT_KEY) || '[]');
-  list.unshift(data);
-  if (list.length > 50) list.length = 50;
-  localStorage.setItem(OT_KEY, JSON.stringify(list));
+  if (!Array.isArray(state.overtimeReports)) state.overtimeReports = [];
+  state.overtimeReports.unshift(data);
+  if (state.overtimeReports.length > 50) state.overtimeReports.length = 50;
+  saveState();
   ot_renderSavedList();
   showToast('저장되었습니다');
+  saveFieldsToSheet(['overtimeReports']).catch(() => {});
 }
 
 function ot_renderSavedList() {
   const el = document.getElementById('ot-saved-list');
   if (!el) return;
-  const list = JSON.parse(localStorage.getItem(OT_KEY) || '[]');
+  const list = state.overtimeReports || [];
   if (!list.length) {
     el.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:6px 0;">저장된 보고서가 없습니다.</div>';
     return;
@@ -954,21 +954,21 @@ function ot_renderSavedList() {
 }
 
 function ot_loadReport(idx) {
-  const list = JSON.parse(localStorage.getItem(OT_KEY) || '[]');
+  const list = state.overtimeReports || [];
   if (list[idx]) { ot_fillForm(list[idx]); showToast('불러왔습니다'); }
 }
 
 function ot_deleteReport(idx) {
   if (!confirm('이 보고서를 삭제하시겠습니까?')) return;
-  const list = JSON.parse(localStorage.getItem(OT_KEY) || '[]');
-  list.splice(idx, 1);
-  localStorage.setItem(OT_KEY, JSON.stringify(list));
+  state.overtimeReports.splice(idx, 1);
+  saveState();
   ot_renderSavedList();
   showToast('삭제되었습니다');
+  saveFieldsToSheet(['overtimeReports']).catch(() => {});
 }
 
 function ot_printSaved(idx) {
-  const list = JSON.parse(localStorage.getItem(OT_KEY) || '[]');
+  const list = state.overtimeReports || [];
   if (list[idx]) ot_openPrintWindow(list[idx]);
 }
 

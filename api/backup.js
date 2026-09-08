@@ -6,7 +6,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-const DATA_KEYS = ['employees', 'projects', 'dailyData', 'purchaseDB', 'mdEntries', 'dailyReports', 'lastModified', 'modifiedBy'];
+const DATA_KEYS = ['employees', 'projects', 'dailyData', 'purchaseDB', 'mdEntries', 'dailyReports', 'overtimeReports', 'lastModified', 'modifiedBy'];
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');

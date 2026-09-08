@@ -63,10 +63,10 @@ module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST만 허용' });
 
   try {
-    const { employees, projects, dailyData, purchaseDB, purchaseDrafts, mdEntries, dailyReports, lastModified, modifiedBy } = req.body;
+    const { employees, projects, dailyData, purchaseDB, purchaseDrafts, mdEntries, dailyReports, overtimeReports, lastModified, modifiedBy } = req.body;
 
     // 실질 데이터 변경 시에만 스냅샷 저장
-    const hasRealData = employees !== undefined || projects !== undefined || dailyData !== undefined || dailyReports !== undefined;
+    const hasRealData = employees !== undefined || projects !== undefined || dailyData !== undefined || dailyReports !== undefined || overtimeReports !== undefined;
     if (hasRealData) await saveSnapshot(modifiedBy);
 
     const tasks = [];
@@ -77,6 +77,7 @@ module.exports = async (req, res) => {
     if (purchaseDrafts !== undefined) tasks.push(upsertKey('purchaseDrafts', purchaseDrafts));
     if (mdEntries    !== undefined) tasks.push(upsertKey('mdEntries',    mdEntries));
     if (dailyReports !== undefined) tasks.push(upsertKey('dailyReports', dailyReports));
+    if (overtimeReports !== undefined) tasks.push(upsertKey('overtimeReports', overtimeReports));
     if (lastModified !== undefined) tasks.push(upsertKey('lastModified', lastModified));
     if (modifiedBy   !== undefined) tasks.push(upsertKey('modifiedBy',   modifiedBy));
 
