@@ -385,18 +385,24 @@ function drLoad(date, opts) {
     return;
   }
 
-  // 신규 — 직전 보고서의 익일 계획을 금일 진행상황으로 승계
+  // 신규 — 직전 저장된 보고서(주말 등 공백은 건너뛰고 가장 최근 것)에서
+  // 익일 계획→금일 진행상황, 중량물 취급계획→중량물 취급계획을 함께 승계한다
   const prevDates = Object.keys(state.dailyReports || {}).filter(d => d < date).sort();
   const prevDate = prevDates[prevDates.length - 1];
   const prev = prevDate ? state.dailyReports[prevDate] : null;
   drApplyRecord(null);
   drUpdateSaveStatus('');
 
-  if (prev && prev.next && prev.next.length && !(opts && opts.noCarry) && !drIsViewer()) {
-    drWriteSection('today', prev.next.map(r => ({ proj: r.proj, work: r.work, pct: r.pct, note: r.note })));
+  const carryToday = prev && prev.next && prev.next.length;
+  const carryHeavy = prev && prev.heavy && prev.heavy.length;
+  if ((carryToday || carryHeavy) && !(opts && opts.noCarry) && !drIsViewer()) {
+    const copyRows = rows => rows.map(r => ({ proj: r.proj, work: r.work, pct: r.pct, note: r.note }));
+    if (carryToday) drWriteSection('today', copyRows(prev.next));
+    if (carryHeavy) drWriteSection('heavy', copyRows(prev.heavy));
     drRecalcFit();
-    drToast(`${drKorDate(prevDate).replace(/\s/g, '')}의 익일 계획을 불러왔습니다`, '되돌리기', () => {
-      drWriteSection('today', []);
+    drToast(`${drKorDate(prevDate).replace(/\s/g, '')} 보고서 내용을 불러왔습니다`, '되돌리기', () => {
+      if (carryToday) drWriteSection('today', []);
+      if (carryHeavy) drWriteSection('heavy', []);
       drScheduleSave();
     });
   }
@@ -413,6 +419,14 @@ function drScheduleSave() {
 function drSaveNow() {
   if (drIsViewer()) return;
   const rec = drCollect();
+  // 익일 계획을 따로 안 썼으면(주말 등 "내일"이 휴무라 생략하는 경우가 많음)
+  // 오늘 진행상황을 그대로 익일 계획의 기본값으로 채워 둔다. 사용자가 익일
+  // 계획에 직접 내용을 쓰면 그때부턴 빈 상태가 아니므로 이 기본값은 적용되지 않는다.
+  if (!rec.next.length && rec.today.length) {
+    rec.next = JSON.parse(JSON.stringify(rec.today));
+    drWriteSection('next', rec.next);
+    drRecalcFit();
+  }
   const hasAny = DR_SECTIONS.some(s => rec[s].length);
   if (!state.dailyReports) state.dailyReports = {};
   if (hasAny) {
