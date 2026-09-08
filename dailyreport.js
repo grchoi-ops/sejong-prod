@@ -462,6 +462,24 @@ function drUpdateSaveStatus(text) {
 // ✓ 저장 버튼 / Ctrl+S — 로컬 즉시 저장 + 서버(Supabase) 즉시 저장 (③워크오더·④일일 입력의 saveDailyData()와 동일한 흐름)
 // 저장은 저장일 뿐 — 익일 계획을 채우는 것은 아래 drCarryToNext()(익일 계획으로
 // 복사 버튼)를 통해서만 일어난다.
+// 일일업무보고서(dailyReports) 데이터만 서버에 반영한다. /api/save는 요청 본문에
+// 실제로 담긴 키만 각각 갱신하므로, 다른 탭의 데이터(직원·프로젝트·일일입력·
+// 구매요청·M/D)는 여기서 건드리지 않는다 — 전체 상태를 보내는 saveToSheet()와는
+// 별도의 경로다.
+async function drPushToServer() {
+  const res = await fetch(API_BASE + '/api/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      dailyReports: state.dailyReports || {},
+      lastModified: new Date().toISOString(),
+      modifiedBy: localStorage.getItem('sejong_user_name') || '알 수 없음'
+    })
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || '저장 실패');
+}
+
 async function drSaveToServer() {
   if (drIsViewer()) return;
   clearTimeout(_drSaveTimer);
@@ -471,7 +489,7 @@ async function drSaveToServer() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
   drToast('서버에 저장 중...');
   try {
-    await saveToSheet();
+    await drPushToServer();
     drToast('저장 완료');
   } catch (e) {
     drToast('서버 저장 실패 (로컬엔 저장됨)');
@@ -608,7 +626,7 @@ async function drDeleteRecord(date) {
   drRenderHistoryList();
   if (date === _drDate) drLoad(date, { noCarry: true });
   try {
-    await saveToSheet();
+    await drPushToServer();
     showToast(`${date} 보고서를 삭제했습니다`, 'success');
   } catch (e) {
     showToast('로컬은 삭제됐지만 서버 반영에 실패했습니다: ' + e.message, 'error');
@@ -629,7 +647,7 @@ async function drBulkDeletePrompt() {
   drRenderHistoryList();
   if (targets.includes(_drDate)) drLoad(_drDate, { noCarry: true });
   try {
-    await saveToSheet();
+    await drPushToServer();
     showToast(`${targets.length}개 보고서를 삭제했습니다`, 'success');
   } catch (e) {
     showToast('로컬은 삭제됐지만 서버 반영에 실패했습니다: ' + e.message, 'error');
