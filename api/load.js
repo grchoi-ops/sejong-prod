@@ -48,6 +48,7 @@ module.exports = async (req, res) => {
         purchaseDrafts: result.purchaseDrafts || [],
         mdEntries:    mdArr,
         dailyReports: result.dailyReports || {},
+        overtimeReports: result.overtimeReports || [],
         lastModified: result.lastModified || null,
         modifiedBy:   result.modifiedBy   || null
       }

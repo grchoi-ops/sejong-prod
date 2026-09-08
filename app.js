@@ -68,6 +68,7 @@ let state = {
   purchaseDrafts: [],  // 구매요청 임시저장 (미확정 초안)
   mdEntries: [],
   dailyReports: {},  // { 'YYYY-MM-DD': { dept, writer, today:[], heavy:[], next:[], updatedAt } }
+  overtimeReports: [],  // [{ id, savedAt, reportKind, workers:[], ... }] — 특근·잔업 보고서
   _lastSyncTime: null,
   _statsYear: new Date().getFullYear(),
   _statsMonth: new Date().getMonth() + 1
@@ -260,6 +261,9 @@ const API_BASE = 'https://sejong-prod.vercel.app';
 
 let _isSyncing = false;
 let _pendingSync = false;
+let _pendingSyncFields = null;
+const ALL_SYNC_FIELDS = ['employees', 'projects', 'dailyData', 'purchaseDB', 'purchaseDrafts', 'mdEntries', 'dailyReports', 'overtimeReports'];
+const _SYNC_FIELD_DEFAULTS = { purchaseDB: [], purchaseDrafts: [], mdEntries: [], dailyReports: {}, overtimeReports: [] };
 
 function setSyncStatus(status, msg) {
   const el = document.getElementById('sync-status');
@@ -293,7 +297,8 @@ function saveLocal() {
     purchaseDB: state.purchaseDB || [],
     purchaseDrafts: state.purchaseDrafts || [],
     mdEntries:  state.mdEntries  || [],
-    dailyReports: state.dailyReports || {}
+    dailyReports: state.dailyReports || {},
+    overtimeReports: state.overtimeReports || []
   }));
 }
 
@@ -309,6 +314,7 @@ function loadLocal() {
     state.purchaseDrafts = d.purchaseDrafts || [];
     state.mdEntries  = d.mdEntries  || [];
     state.dailyReports = d.dailyReports || {};
+    state.overtimeReports = d.overtimeReports || [];
     migrateStateFields();
     return true;
   }
@@ -332,6 +338,7 @@ function migrateStateFields() {
 
   if (!Array.isArray(state.mdEntries)) state.mdEntries = [];
   if (!state.dailyReports || typeof state.dailyReports !== 'object') state.dailyReports = {};
+  if (!Array.isArray(state.overtimeReports)) state.overtimeReports = [];
 
   state.projects.forEach(p => {
     if (p.site        === undefined) p.site        = '';
@@ -354,6 +361,25 @@ function migrateStateFields() {
   // [F3] 구버전 구매관리 localStorage 키 → state 통합 (1회 실행)
   _migratePurchaseDB();
   _migratePurchaseProjects();
+  _migrateOvertimeReports();
+}
+
+/**
+ * 특근·잔업 보고서 — 예전엔 서버 연동 없이 localStorage('sejong_overtime_reports')
+ * 에만 저장됐다. state.overtimeReports가 비어 있고 이 localStorage 키에 데이터가
+ * 있으면 한 번만 이관한다 (기존 브라우저에 쌓여있던 기록을 잃지 않기 위함).
+ */
+function _migrateOvertimeReports() {
+  const raw = localStorage.getItem('sejong_overtime_reports');
+  if (!raw) return;
+  try {
+    const old = JSON.parse(raw);
+    if (Array.isArray(old) && old.length > 0 && (!state.overtimeReports || state.overtimeReports.length === 0)) {
+      state.overtimeReports = old;
+    }
+  } catch (e) {
+    console.warn('[migration] sejong_overtime_reports 파싱 오류:', e.message);
+  }
 }
 
 /**
@@ -448,6 +474,7 @@ async function loadFromSheet() {
       state.purchaseDrafts = d.purchaseDrafts || [];
       state.mdEntries  = d.mdEntries  || [];
       state.dailyReports = d.dailyReports || {};
+      state.overtimeReports = d.overtimeReports || [];
       state._lastSyncTime = d.lastModified || new Date().toISOString();
       migrateStateFields();
       saveLocal();
@@ -477,8 +504,16 @@ async function checkConflict() {
   return { conflict: false };
 }
 
+// 전체 상태를 서버에 저장 (모든 탭의 데이터를 함께 반영)
 async function saveToSheet() {
-  if (_isSyncing) { _pendingSync = true; return; }
+  return saveFieldsToSheet(ALL_SYNC_FIELDS);
+}
+
+// 지정한 필드만 서버에 반영한다. 각 탭의 저장 버튼이 자기 데이터에 해당하는
+// 필드만 넘기면, 그 순간 메모리에 있는 다른 탭의(아직 저장 안 됐을 수도 있는)
+// 데이터는 건드리지 않는다. /api/save는 요청 본문에 담긴 키만 각각 upsert한다.
+async function saveFieldsToSheet(fields) {
+  if (_isSyncing) { _pendingSync = true; _pendingSyncFields = fields; return; }
   _isSyncing = true;
   setSyncStatus('syncing', '저장 중...');
   try {
@@ -495,20 +530,15 @@ async function saveToSheet() {
       );
       if (!ok) { _isSyncing = false; setSyncStatus('idle', '저장 취소됨'); return; }
     }
+    const body = {
+      lastModified: new Date().toISOString(),
+      modifiedBy:   localStorage.getItem('sejong_user_name') || '알 수 없음'
+    };
+    fields.forEach(f => { body[f] = state[f] !== undefined ? state[f] : _SYNC_FIELD_DEFAULTS[f]; });
     const res = await fetch(API_BASE + '/api/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        employees:    state.employees,
-        projects:     state.projects,
-        dailyData:    state.dailyData,
-        purchaseDB:   state.purchaseDB || [],
-        purchaseDrafts: state.purchaseDrafts || [],
-        mdEntries:    state.mdEntries  || [],
-        dailyReports: state.dailyReports || {},
-        lastModified: new Date().toISOString(),
-        modifiedBy:   localStorage.getItem('sejong_user_name') || '알 수 없음'
-      })
+      body: JSON.stringify(body)
     });
     const json = await res.json();
     if (!json.success) throw new Error(json.error || '저장 실패');
@@ -518,7 +548,12 @@ async function saveToSheet() {
     setSyncStatus('error', '저장 실패: ' + e.message);
   } finally {
     _isSyncing = false;
-    if (_pendingSync) { _pendingSync = false; saveToSheet(); }
+    if (_pendingSync) {
+      _pendingSync = false;
+      const pendingFields = _pendingSyncFields || ALL_SYNC_FIELDS;
+      _pendingSyncFields = null;
+      saveFieldsToSheet(pendingFields);
+    }
   }
 }
 // 통합 saveState: 로컬만 즉시 저장 (서버는 버튼으로만)
@@ -1426,7 +1461,7 @@ async function saveDailyData() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
   showToast('서버에 저장 중...', '');
   try {
-    await saveToSheet();
+    await saveFieldsToSheet(['dailyData']);
     showToast('저장 완료', 'success');
   } catch(e) {
     showToast('서버 저장 실패 (로컬엔 저장됨)', 'error');
@@ -2966,7 +3001,7 @@ async function saveWoData() {
   const btn = document.getElementById('wo-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
   try {
-    await saveToSheet();
+    await saveFieldsToSheet(['dailyData']);
     showToast('저장 완료', 'success');
   } catch(e) {
     showToast('서버 저장 실패 (로컬엔 저장됨)', 'error');
@@ -3134,7 +3169,8 @@ function exportData() {
     employees: state.employees,
     projects: state.projects,
     dailyData: state.dailyData,
-    dailyReports: state.dailyReports || {}
+    dailyReports: state.dailyReports || {},
+    overtimeReports: state.overtimeReports || []
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -3157,11 +3193,13 @@ function importData(event) {
       state.projects = data.projects || [];
       state.dailyData = data.dailyData || {};
       state.dailyReports = data.dailyReports || {};
+      state.overtimeReports = data.overtimeReports || [];
       saveState();
       renderEmployees();
       renderProjects();
       loadDailyData();
       if (typeof drRefresh === 'function') drRefresh();
+      if (typeof ot_renderSavedList === 'function') ot_renderSavedList();
       showToast('데이터 불러오기 완료', 'success');
     } catch {
       showToast('파일 형식이 올바르지 않습니다.', 'error');
@@ -4162,7 +4200,7 @@ async function pr_saveEntry() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
 
   try {
-    await saveToSheet();
+    await saveFieldsToSheet(['purchaseDB', 'purchaseDrafts']);
     showToast(items.length + '개 품목 저장 완료', 'success');
     pr_resetForm();
     pr_renderDrafts();
@@ -4252,7 +4290,7 @@ function pr_saveDraft() {
   _pr_updateDraftEditingLabel();
   pr_renderDrafts();
   showToast('임시 저장되었습니다. (' + items.length + '개 품목)', 'success');
-  saveToSheet().catch(() => {});
+  saveFieldsToSheet(['purchaseDrafts']).catch(() => {});
 }
 
 /**
@@ -4351,7 +4389,7 @@ function pr_deleteDraft(id) {
   saveState();
   pr_renderDrafts();
   showToast('삭제되었습니다.', 'success');
-  saveToSheet().catch(() => {});
+  saveFieldsToSheet(['purchaseDrafts']).catch(() => {});
 }
 
 /**

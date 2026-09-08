@@ -68,6 +68,8 @@ function drApplyRolePermissions() {
   if (notice) notice.hidden = !viewer;
   const carryBtn = document.getElementById('dr-carry-btn');
   if (carryBtn) carryBtn.disabled = !!viewer;
+  const pullBtn = document.getElementById('dr-pull-btn');
+  if (pullBtn) pullBtn.disabled = !!viewer;
   const saveBtn = document.getElementById('dr-save-btn');
   if (saveBtn) saveBtn.style.display = viewer ? 'none' : '';
   drSetCellsEditable(!viewer);
@@ -97,6 +99,7 @@ function drBuildShell() {
         <div id="dr-dow" style="font-size:13px;color:var(--text2);"></div>
         <button class="btn btn-success btn-sm" id="dr-save-btn" title="로컬 저장 + 서버 저장을 즉시 실행합니다 (Ctrl+S)">✓ 저장</button>
         <button class="btn btn-ghost btn-sm" id="dr-today-btn">오늘</button>
+        <button class="btn btn-ghost btn-sm" id="dr-pull-btn" title="전일 보고서의 익일 계획→금일 진행상황, 중량물 취급계획을 가져옵니다">전일 계획 불러오기</button>
         <button class="btn btn-ghost btn-sm" id="dr-carry-btn" title="금일 진행상황을 익일 계획으로 복사">익일 계획으로 복사</button>
         <div style="margin-left:auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
           <div class="dr-fit" id="dr-fit"><span id="dr-fit-lab">1장 여유</span><span class="dr-fitbar"><i id="dr-fit-fill"></i></span></div>
@@ -147,6 +150,7 @@ function drBuildShell() {
       <div class="dr-drawer-list" id="dr-drawer-list"></div>
       <div class="dr-drawer-foot">
         <button class="btn btn-ghost btn-sm" id="dr-export-csv">CSV 내보내기</button>
+        <button class="btn btn-ghost btn-sm" id="dr-bulk-delete" title="특정 날짜 이후 보고서를 한번에 삭제합니다">기간 일괄 삭제</button>
       </div>
     </aside>
 
@@ -210,6 +214,7 @@ function drBuildShell() {
   document.getElementById('dr-next').addEventListener('click', () => drLoad(drShift(_drDate, 1)));
   document.getElementById('dr-save-btn').addEventListener('click', drSaveToServer);
   document.getElementById('dr-today-btn').addEventListener('click', () => drLoad(drTodayStr()));
+  document.getElementById('dr-pull-btn').addEventListener('click', drPullFromPrevDay);
   document.getElementById('dr-carry-btn').addEventListener('click', drCarryToNext);
   document.getElementById('dr-print-btn').addEventListener('click', drPrint);
   document.getElementById('dr-hist-btn').addEventListener('click', () => {
@@ -219,6 +224,7 @@ function drBuildShell() {
   document.getElementById('dr-drawer-close').addEventListener('click', () => document.getElementById('dr-drawer').classList.remove('open'));
   document.getElementById('dr-drawer-q').addEventListener('input', drRenderHistoryList);
   document.getElementById('dr-export-csv').addEventListener('click', drExportCsv);
+  document.getElementById('dr-bulk-delete').addEventListener('click', drBulkDeletePrompt);
 
   root.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -385,21 +391,43 @@ function drLoad(date, opts) {
     return;
   }
 
-  // 신규 — 직전 보고서의 익일 계획을 금일 진행상황으로 승계
-  const prevDates = Object.keys(state.dailyReports || {}).filter(d => d < date).sort();
-  const prevDate = prevDates[prevDates.length - 1];
-  const prev = prevDate ? state.dailyReports[prevDate] : null;
+  // 신규 — 자동 승계는 하지 않는다. 필요하면 "전일 계획 불러오기" 버튼을 눌러야 한다.
   drApplyRecord(null);
   drUpdateSaveStatus('');
+}
 
-  if (prev && prev.next && prev.next.length && !(opts && opts.noCarry) && !drIsViewer()) {
-    drWriteSection('today', prev.next.map(r => ({ proj: r.proj, work: r.work, pct: r.pct, note: r.note })));
-    drRecalcFit();
-    drToast(`${drKorDate(prevDate).replace(/\s/g, '')}의 익일 계획을 불러왔습니다`, '되돌리기', () => {
-      drWriteSection('today', []);
-      drScheduleSave();
-    });
-  }
+// 가장 최근에 저장된 보고서(주말 등 공백은 건너뛰고)를 찾는다
+function drFindPrevRecord(beforeDate) {
+  const prevDates = Object.keys(state.dailyReports || {}).filter(d => d < beforeDate).sort();
+  const prevDate = prevDates[prevDates.length - 1];
+  return prevDate ? { date: prevDate, rec: state.dailyReports[prevDate] } : null;
+}
+
+// "전일 계획 불러오기" 버튼 — 직전 저장된 보고서의 "익일 계획"을 오늘의
+// "금일 진행상황"으로, "중량물 취급계획"을 오늘의 "중량물 취급계획"으로 가져온다.
+// 직전 보고서에 "익일 계획"이 비어 있으면(예: 금요일에 "내일은 쉬니까" 하고
+// 생략한 경우) 그 직전 보고서의 "금일 진행상황"을 대신 가져온다 — 주말을 껴도
+// 항상 실제로 일한 마지막 내용을 불러올 수 있게 하기 위함. 오직 이 버튼을
+// 눌렀을 때만 동작하며, 날짜를 열거나 저장할 때는 자동으로 일어나지 않는다.
+function drPullFromPrevDay() {
+  if (drIsViewer()) return;
+  const found = drFindPrevRecord(_drDate);
+  if (!found) { drToast('불러올 이전 보고서가 없습니다'); return; }
+  const prev = found.rec;
+  const carrySource = (prev.next && prev.next.length) ? prev.next : (prev.today && prev.today.length ? prev.today : null);
+  const carryHeavy = (prev.heavy && prev.heavy.length) ? prev.heavy : null;
+  if (!carrySource && !carryHeavy) { drToast('이전 보고서에 불러올 내용이 없습니다'); return; }
+
+  const before = { today: drReadSection('today'), heavy: drReadSection('heavy') };
+  const copyRows = rows => rows.map(r => ({ proj: r.proj, work: r.work, pct: r.pct, note: r.note }));
+  if (carrySource) drWriteSection('today', copyRows(carrySource));
+  if (carryHeavy) drWriteSection('heavy', copyRows(carryHeavy));
+  drScheduleSave();
+  drToast(`${drKorDate(found.date).replace(/\s/g, '')} 보고서 내용을 불러왔습니다`, '되돌리기', () => {
+    drWriteSection('today', before.today);
+    drWriteSection('heavy', before.heavy);
+    drScheduleSave();
+  });
 }
 
 function drScheduleSave() {
@@ -432,6 +460,26 @@ function drUpdateSaveStatus(text) {
 }
 
 // ✓ 저장 버튼 / Ctrl+S — 로컬 즉시 저장 + 서버(Supabase) 즉시 저장 (③워크오더·④일일 입력의 saveDailyData()와 동일한 흐름)
+// 저장은 저장일 뿐 — 익일 계획을 채우는 것은 아래 drCarryToNext()(익일 계획으로
+// 복사 버튼)를 통해서만 일어난다.
+// 일일업무보고서(dailyReports) 데이터만 서버에 반영한다. /api/save는 요청 본문에
+// 실제로 담긴 키만 각각 갱신하므로, 다른 탭의 데이터(직원·프로젝트·일일입력·
+// 구매요청·M/D)는 여기서 건드리지 않는다 — 전체 상태를 보내는 saveToSheet()와는
+// 별도의 경로다.
+async function drPushToServer() {
+  const res = await fetch(API_BASE + '/api/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      dailyReports: state.dailyReports || {},
+      lastModified: new Date().toISOString(),
+      modifiedBy: localStorage.getItem('sejong_user_name') || '알 수 없음'
+    })
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || '저장 실패');
+}
+
 async function drSaveToServer() {
   if (drIsViewer()) return;
   clearTimeout(_drSaveTimer);
@@ -441,7 +489,7 @@ async function drSaveToServer() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
   drToast('서버에 저장 중...');
   try {
-    await saveToSheet();
+    await drPushToServer();
     drToast('저장 완료');
   } catch (e) {
     drToast('서버 저장 실패 (로컬엔 저장됨)');
@@ -554,13 +602,56 @@ function drRenderHistoryList() {
     return;
   }
   list.innerHTML = items.map(it => `
-    <button type="button" class="dr-item${it.date === _drDate ? ' cur' : ''}" data-date="${it.date}">
-      <div class="dr-item-d">${it.date.slice(5).replace('-', '. ')} (${DAYS_KO[drParse(it.date).getDay()]}) <span class="dr-item-n">${it.n}건</span></div>
-      <div class="dr-item-s">${drEsc(it.sum)}</div>
-    </button>`).join('');
-  list.querySelectorAll('.dr-item').forEach(b => {
+    <div class="dr-item${it.date === _drDate ? ' cur' : ''}">
+      <button type="button" class="dr-item-main" data-date="${it.date}">
+        <div class="dr-item-d">${it.date.slice(5).replace('-', '. ')} (${DAYS_KO[drParse(it.date).getDay()]}) <span class="dr-item-n">${it.n}건</span></div>
+        <div class="dr-item-s">${drEsc(it.sum)}</div>
+      </button>
+      <button type="button" class="dr-item-del" data-date="${it.date}" title="이 보고서 삭제">×</button>
+    </div>`).join('');
+  list.querySelectorAll('.dr-item-main').forEach(b => {
     b.addEventListener('click', () => drLoad(b.dataset.date, { noCarry: true }));
   });
+  list.querySelectorAll('.dr-item-del').forEach(b => {
+    b.addEventListener('click', e => { e.stopPropagation(); drDeleteRecord(b.dataset.date); });
+  });
+}
+
+// 보고서 한 건 삭제 (조회 목록에서 × 버튼)
+async function drDeleteRecord(date) {
+  if (drIsViewer()) return;
+  if (!confirm(`${drKorDate(date)} 보고서를 삭제하시겠습니까?\n서버에도 즉시 반영되며 되돌릴 수 없습니다.`)) return;
+  delete state.dailyReports[date];
+  saveState();
+  drRenderHistoryList();
+  if (date === _drDate) drLoad(date, { noCarry: true });
+  try {
+    await drPushToServer();
+    showToast(`${date} 보고서를 삭제했습니다`, 'success');
+  } catch (e) {
+    showToast('로컬은 삭제됐지만 서버 반영에 실패했습니다: ' + e.message, 'error');
+  }
+}
+
+// 특정 날짜 이후 보고서를 한번에 삭제 (오작동으로 여러 날짜에 잘못 쌓인 데이터 정리용)
+async function drBulkDeletePrompt() {
+  if (drIsViewer()) return;
+  const from = prompt('이 날짜부터(포함) 저장된 모든 보고서를 삭제합니다.\n삭제 시작 날짜를 입력하세요 (예: 2026-09-09)');
+  if (!from) return;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) { showToast('날짜 형식이 올바르지 않습니다 (예: 2026-09-09)', 'error'); return; }
+  const targets = Object.keys(state.dailyReports || {}).filter(d => d >= from).sort();
+  if (!targets.length) { showToast('해당 범위에 삭제할 보고서가 없습니다.'); return; }
+  if (!confirm(`${from} 이후 ${targets.length}개 보고서를 삭제합니다.\n(${targets[0]} ~ ${targets[targets.length - 1]})\n되돌릴 수 없습니다. 계속하시겠습니까?`)) return;
+  targets.forEach(d => delete state.dailyReports[d]);
+  saveState();
+  drRenderHistoryList();
+  if (targets.includes(_drDate)) drLoad(_drDate, { noCarry: true });
+  try {
+    await drPushToServer();
+    showToast(`${targets.length}개 보고서를 삭제했습니다`, 'success');
+  } catch (e) {
+    showToast('로컬은 삭제됐지만 서버 반영에 실패했습니다: ' + e.message, 'error');
+  }
 }
 
 /* ══════════════════════════════════════════
@@ -762,6 +853,9 @@ function drInjectStyle() {
     .dr-addrow:hover { border-color:#243447; color:#243447; background:#F5F7F9; }
     .dr-readonly .dr-addrow { display:none; }
     .dr-readonly #dr-carry-btn { display:none; }
+    .dr-readonly #dr-pull-btn { display:none; }
+    .dr-readonly .dr-item-del { display:none; }
+    .dr-readonly #dr-bulk-delete { display:none; }
 
     .dr-fit { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text2); white-space:nowrap; }
     .dr-fitbar { width:104px; height:7px; background:var(--surface3); border-radius:1px; overflow:hidden; }
@@ -779,13 +873,16 @@ function drInjectStyle() {
     .dr-drawer-head button { background:none; border:0; font-size:18px; cursor:pointer; color:var(--text2); line-height:1; }
     .dr-drawer-q { margin:10px 12px; padding:7px 9px; width:calc(100% - 24px); }
     .dr-drawer-list { flex:1; overflow:auto; padding:0 8px 12px; }
-    .dr-item { display:block; width:100%; text-align:left; background:var(--surface2); border:1px solid var(--border); border-radius:3px; padding:9px 11px; margin-bottom:6px; cursor:pointer; font-family:inherit; color:var(--text); }
+    .dr-item { display:flex; align-items:stretch; gap:4px; background:var(--surface2); border:1px solid var(--border); border-radius:3px; margin-bottom:6px; }
     .dr-item:hover { border-color:var(--accent); }
     .dr-item.cur { border-color:var(--accent4); border-left-width:3px; }
+    .dr-item-main { flex:1; min-width:0; display:block; text-align:left; background:none; border:0; padding:9px 11px; cursor:pointer; font-family:inherit; color:var(--text); }
     .dr-item-d { font-size:13px; font-weight:600; }
     .dr-item-n { font-weight:400; color:var(--text3); font-size:11px; }
     .dr-item-s { font-size:11.5px; color:var(--text2); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .dr-drawer-foot { padding:10px 12px; border-top:1px solid var(--border); display:flex; gap:6px; }
+    .dr-item-del { flex-shrink:0; align-self:center; margin-right:8px; width:20px; height:20px; border:1px solid var(--border); background:transparent; color:var(--text3); border-radius:2px; cursor:pointer; font-size:13px; line-height:1; }
+    .dr-item-del:hover { background:#FCE9E1; border-color:var(--accent4); color:#C94A15; }
+    .dr-drawer-foot { padding:10px 12px; border-top:1px solid var(--border); display:flex; gap:6px; flex-wrap:wrap; }
     .dr-empty { padding:30px 14px; color:var(--text3); font-size:13px; line-height:1.6; text-align:center; }
 
     /* 자동완성 */
