@@ -386,22 +386,25 @@ function drLoad(date, opts) {
   }
 
   // 신규 — 직전 저장된 보고서(주말 등 공백은 건너뛰고 가장 최근 것)에서
-  // 익일 계획→금일 진행상황, 중량물 취급계획→중량물 취급계획을 함께 승계한다
+  // 익일 계획→금일 진행상황, 중량물 취급계획→중량물 취급계획을 함께 승계한다.
+  // 직전 보고서에 "익일 계획"을 안 썼으면(예: 금요일에 "내일은 쉬니까" 하고
+  // 생략) 그 직전 보고서의 "금일 진행상황"을 대신 승계한다 — 주말을 껴도
+  // 항상 실제로 일한 마지막 내용이 이어지게 하기 위함.
   const prevDates = Object.keys(state.dailyReports || {}).filter(d => d < date).sort();
   const prevDate = prevDates[prevDates.length - 1];
   const prev = prevDate ? state.dailyReports[prevDate] : null;
   drApplyRecord(null);
   drUpdateSaveStatus('');
 
-  const carryToday = prev && prev.next && prev.next.length;
+  const carrySource = prev && ((prev.next && prev.next.length) ? prev.next : (prev.today && prev.today.length ? prev.today : null));
   const carryHeavy = prev && prev.heavy && prev.heavy.length;
-  if ((carryToday || carryHeavy) && !(opts && opts.noCarry) && !drIsViewer()) {
+  if ((carrySource || carryHeavy) && !(opts && opts.noCarry) && !drIsViewer()) {
     const copyRows = rows => rows.map(r => ({ proj: r.proj, work: r.work, pct: r.pct, note: r.note }));
-    if (carryToday) drWriteSection('today', copyRows(prev.next));
+    if (carrySource) drWriteSection('today', copyRows(carrySource));
     if (carryHeavy) drWriteSection('heavy', copyRows(prev.heavy));
     drRecalcFit();
     drToast(`${drKorDate(prevDate).replace(/\s/g, '')} 보고서 내용을 불러왔습니다`, '되돌리기', () => {
-      if (carryToday) drWriteSection('today', []);
+      if (carrySource) drWriteSection('today', []);
       if (carryHeavy) drWriteSection('heavy', []);
       drScheduleSave();
     });
@@ -437,24 +440,12 @@ function drUpdateSaveStatus(text) {
   if (el) el.textContent = text;
 }
 
-// 익일 계획이 비어 있으면 금일 진행상황을 기본값으로 채운다. 자동저장(디바운스)
-// 때는 적용하지 않고, 사용자가 "✓ 저장"을 직접 누르는(=하루를 마무리하는) 시점에만
-// 적용한다 — 매 타이핑마다 조용히 계속 이어붙는 것을 막기 위함.
-function drFillNextDefaultIfEmpty() {
-  if (drIsViewer()) return;
-  const nextRows = drReadSection('next').filter(drNotEmpty);
-  const todayRows = drReadSection('today').filter(drNotEmpty);
-  if (!nextRows.length && todayRows.length) {
-    drWriteSection('next', todayRows);
-    drRecalcFit();
-  }
-}
-
 // ✓ 저장 버튼 / Ctrl+S — 로컬 즉시 저장 + 서버(Supabase) 즉시 저장 (③워크오더·④일일 입력의 saveDailyData()와 동일한 흐름)
+// 저장은 저장일 뿐 — 익일 계획을 채우는 것은 아래 drCarryToNext()(익일 계획으로
+// 복사 버튼)를 통해서만 일어난다.
 async function drSaveToServer() {
   if (drIsViewer()) return;
   clearTimeout(_drSaveTimer);
-  drFillNextDefaultIfEmpty();
   drSaveNow();
 
   const btn = document.getElementById('dr-save-btn');
