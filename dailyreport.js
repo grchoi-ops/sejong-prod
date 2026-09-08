@@ -419,14 +419,6 @@ function drScheduleSave() {
 function drSaveNow() {
   if (drIsViewer()) return;
   const rec = drCollect();
-  // 익일 계획을 따로 안 썼으면(주말 등 "내일"이 휴무라 생략하는 경우가 많음)
-  // 오늘 진행상황을 그대로 익일 계획의 기본값으로 채워 둔다. 사용자가 익일
-  // 계획에 직접 내용을 쓰면 그때부턴 빈 상태가 아니므로 이 기본값은 적용되지 않는다.
-  if (!rec.next.length && rec.today.length) {
-    rec.next = JSON.parse(JSON.stringify(rec.today));
-    drWriteSection('next', rec.next);
-    drRecalcFit();
-  }
   const hasAny = DR_SECTIONS.some(s => rec[s].length);
   if (!state.dailyReports) state.dailyReports = {};
   if (hasAny) {
@@ -445,10 +437,24 @@ function drUpdateSaveStatus(text) {
   if (el) el.textContent = text;
 }
 
+// 익일 계획이 비어 있으면 금일 진행상황을 기본값으로 채운다. 자동저장(디바운스)
+// 때는 적용하지 않고, 사용자가 "✓ 저장"을 직접 누르는(=하루를 마무리하는) 시점에만
+// 적용한다 — 매 타이핑마다 조용히 계속 이어붙는 것을 막기 위함.
+function drFillNextDefaultIfEmpty() {
+  if (drIsViewer()) return;
+  const nextRows = drReadSection('next').filter(drNotEmpty);
+  const todayRows = drReadSection('today').filter(drNotEmpty);
+  if (!nextRows.length && todayRows.length) {
+    drWriteSection('next', todayRows);
+    drRecalcFit();
+  }
+}
+
 // ✓ 저장 버튼 / Ctrl+S — 로컬 즉시 저장 + 서버(Supabase) 즉시 저장 (③워크오더·④일일 입력의 saveDailyData()와 동일한 흐름)
 async function drSaveToServer() {
   if (drIsViewer()) return;
   clearTimeout(_drSaveTimer);
+  drFillNextDefaultIfEmpty();
   drSaveNow();
 
   const btn = document.getElementById('dr-save-btn');
