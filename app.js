@@ -69,6 +69,7 @@ let state = {
   mdEntries: [],
   dailyReports: {},  // { 'YYYY-MM-DD': { dept, writer, today:[], heavy:[], next:[], updatedAt } }
   overtimeReports: [],  // [{ id, savedAt, reportKind, workers:[], ... }] — 특근·잔업 보고서
+  tbmRecords: [],  // [{ id, date, status, participants:[], photos:[{url,takenAt,caption}], ... }] — TBM 회의록
   _lastSyncTime: null,
   _statsYear: new Date().getFullYear(),
   _statsMonth: new Date().getMonth() + 1
@@ -123,7 +124,7 @@ function _updateHeaderUser() {
 
 function _applyRoleUI() {
   const role = currentUser?.mdRole || '일반';
-  const allRestrictedTabs = ['settings', 'wo', 'daily', 'report', 'purchase', 'dashboard', 'stats', 'dailyreport'];
+  const allRestrictedTabs = ['settings', 'wo', 'daily', 'report', 'purchase', 'dashboard', 'stats', 'dailyreport', 'tbm'];
   const inspectorHiddenTabs = ['settings', 'wo', 'report', 'purchase'];
   const viewerHiddenTabs = ['settings', 'purchase', 'manday'];
 
@@ -239,6 +240,7 @@ function setupTabs() {
       if (tab === 'overtime')  ot_init();
       if (tab === 'jangbi')    jangbiInit();
       if (tab === 'dailyreport') drInit();
+      if (tab === 'tbm')       tbmInit();
       checkAlerts();
     });
   });
@@ -262,8 +264,8 @@ const API_BASE = 'https://sejong-prod.vercel.app';
 let _isSyncing = false;
 let _pendingSync = false;
 let _pendingSyncFields = null;
-const ALL_SYNC_FIELDS = ['employees', 'projects', 'dailyData', 'purchaseDB', 'purchaseDrafts', 'mdEntries', 'dailyReports', 'overtimeReports'];
-const _SYNC_FIELD_DEFAULTS = { purchaseDB: [], purchaseDrafts: [], mdEntries: [], dailyReports: {}, overtimeReports: [] };
+const ALL_SYNC_FIELDS = ['employees', 'projects', 'dailyData', 'purchaseDB', 'purchaseDrafts', 'mdEntries', 'dailyReports', 'overtimeReports', 'tbmRecords'];
+const _SYNC_FIELD_DEFAULTS = { purchaseDB: [], purchaseDrafts: [], mdEntries: [], dailyReports: {}, overtimeReports: [], tbmRecords: [] };
 
 function setSyncStatus(status, msg) {
   const el = document.getElementById('sync-status');
@@ -298,7 +300,8 @@ function saveLocal() {
     purchaseDrafts: state.purchaseDrafts || [],
     mdEntries:  state.mdEntries  || [],
     dailyReports: state.dailyReports || {},
-    overtimeReports: state.overtimeReports || []
+    overtimeReports: state.overtimeReports || [],
+    tbmRecords: state.tbmRecords || []
   }));
 }
 
@@ -315,6 +318,7 @@ function loadLocal() {
     state.mdEntries  = d.mdEntries  || [];
     state.dailyReports = d.dailyReports || {};
     state.overtimeReports = d.overtimeReports || [];
+    state.tbmRecords = d.tbmRecords || [];
     migrateStateFields();
     return true;
   }
@@ -339,6 +343,7 @@ function migrateStateFields() {
   if (!Array.isArray(state.mdEntries)) state.mdEntries = [];
   if (!state.dailyReports || typeof state.dailyReports !== 'object') state.dailyReports = {};
   if (!Array.isArray(state.overtimeReports)) state.overtimeReports = [];
+  if (!Array.isArray(state.tbmRecords)) state.tbmRecords = [];
 
   state.projects.forEach(p => {
     if (p.site        === undefined) p.site        = '';
@@ -475,6 +480,7 @@ async function loadFromSheet() {
       state.mdEntries  = d.mdEntries  || [];
       state.dailyReports = d.dailyReports || {};
       state.overtimeReports = d.overtimeReports || [];
+      state.tbmRecords = d.tbmRecords || [];
       state._lastSyncTime = d.lastModified || new Date().toISOString();
       migrateStateFields();
       saveLocal();
@@ -3170,7 +3176,8 @@ function exportData() {
     projects: state.projects,
     dailyData: state.dailyData,
     dailyReports: state.dailyReports || {},
-    overtimeReports: state.overtimeReports || []
+    overtimeReports: state.overtimeReports || [],
+    tbmRecords: state.tbmRecords || []
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -3194,12 +3201,14 @@ function importData(event) {
       state.dailyData = data.dailyData || {};
       state.dailyReports = data.dailyReports || {};
       state.overtimeReports = data.overtimeReports || [];
+      state.tbmRecords = data.tbmRecords || [];
       saveState();
       renderEmployees();
       renderProjects();
       loadDailyData();
       if (typeof drRefresh === 'function') drRefresh();
       if (typeof ot_renderSavedList === 'function') ot_renderSavedList();
+      if (typeof tbmRefresh === 'function') tbmRefresh();
       showToast('데이터 불러오기 완료', 'success');
     } catch {
       showToast('파일 형식이 올바르지 않습니다.', 'error');
