@@ -337,7 +337,8 @@ function tbmRenderEditor() {
   box.innerHTML =
     '<div class="tbm-ed-head">' +
       '<div class="tbm-ed-title">' + tbmEsc(tbmKorDate(rec.date)) +
-        '<span class="tbm-badge ' + (rec.status === 'done' ? 'done' : 'draft') + '">' + (rec.status === 'done' ? '작성완료' : '미작성') + '</span>' +
+        '<button class="tbm-badge tbm-badge-btn ' + (rec.status === 'done' ? 'done' : 'draft') + '" onclick="tbmToggleStatus()"' + dis +
+          ' title="눌러서 상태 바꾸기 — 인쇄하면 자동으로 완료가 됩니다">' + (rec.status === 'done' ? '작성완료' : '미작성') + '</button>' +
       '</div>' +
       '<div class="tbm-ed-actions">' +
         '<span class="tbm-savestatus" id="tbm-savestatus"></span>' +
@@ -619,6 +620,24 @@ function tbmClearParticipants() {
   document.querySelectorAll('#tbm-part-grid input[type="checkbox"]').forEach(c => { c.checked = false; });
   tbmUpdatePartCount();
   tbmScheduleLocalSave();
+}
+
+/**
+ * 미작성 ↔ 작성완료 수동 전환.
+ * 인쇄하면 자동으로 완료가 되지만, 배치만 확인하려고 시험 삼아 뽑는 경우가 있어
+ * 되돌릴 길이 필요하다 (이게 없으면 삭제 후 재작성밖에 방법이 없어 사진까지 날아간다).
+ */
+function tbmToggleStatus() {
+  if (tbmIsViewer()) return;
+  const rec = tbmFindByDate(_tbmDate);
+  if (!rec) return;
+  tbmCollect();
+  rec.status = rec.status === 'done' ? 'draft' : 'done';
+  rec.updatedAt = Date.now();
+  tbmRenderList();
+  tbmRenderEditor();
+  tbmSave(true);
+  tbmMsg(rec.status === 'done' ? '작성완료로 표시했습니다' : '미작성으로 되돌렸습니다', 'success');
 }
 
 /** 참석자·작업내용을 그날 데이터로 다시 끌어온다 (저장과는 분리된 명시적 동작) */
@@ -1001,6 +1020,9 @@ function tbmInjectStyle() {
 .tbm-badge { font-size:10px; font-weight:700; padding:1px 6px; border-radius:9px; white-space:nowrap; }
 .tbm-badge.draft { background:rgba(255,71,87,.16); color:var(--red); }
 .tbm-badge.done  { background:rgba(46,213,115,.16); color:var(--green); }
+.tbm-badge-btn { border:1px solid transparent; font-family:inherit; cursor:pointer; }
+.tbm-badge-btn:hover:not(:disabled) { border-color:currentColor; }
+.tbm-badge-btn:disabled { cursor:default; }
 .tbm-side-foot { padding:8px 10px; border-top:1px solid var(--tbm-line); background:var(--surface2); }
 .tbm-side-foot-title { font-size:11px; font-weight:700; color:var(--tbm-mut); margin-bottom:5px; }
 .tbm-range { display:flex; align-items:center; gap:3px; margin-bottom:5px; }
