@@ -125,8 +125,17 @@ function _updateHeaderUser() {
 function _applyRoleUI() {
   const role = currentUser?.mdRole || '일반';
   const allRestrictedTabs = ['settings', 'wo', 'daily', 'report', 'purchase', 'dashboard', 'stats', 'dailyreport', 'tbm'];
-  const inspectorHiddenTabs = ['settings', 'wo', 'report', 'purchase'];
+  const inspectorHiddenTabs = ['settings', 'wo', 'report', 'purchase', 'manday'];
   const viewerHiddenTabs = ['settings', 'purchase', 'manday'];
+  // 안 쓰는 탭 — 탭 줄이 넘쳐 스크롤이 생기므로 감춘다. 리뉴얼 때 없어질 예정이라
+  // 패널과 코드는 그대로 두고 버튼만 숨긴다.
+  // 단, 일반 등급에게는 M/D가 유일하게 보이는 탭이고 로그인 시 여기로 이동하므로
+  // (아래 else 절) 일반에서는 숨기지 않는다 — 숨기면 탭이 하나도 없는 화면이 된다.
+  const unusedTabs = ['manday'];
+  const setTab = (tab, show) => {
+    const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+    if (btn) btn.style.display = show ? '' : 'none';
+  };
 
   // 저장 버튼 표시 여부
   const isViewer = role === '열람용';
@@ -138,8 +147,11 @@ function _applyRoleUI() {
       const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
       if (btn) btn.style.display = '';
     });
+    unusedTabs.forEach(t => setTab(t, false));
+    const activeBtn = document.querySelector('.tab-btn.active');
+    if (activeBtn && unusedTabs.includes(activeBtn.dataset.tab)) switchToTab('dashboard');
   } else if (role === '검사관') {
-    // 대시보드·일일입력·월간통계·M/D만 표시
+    // 대시보드·일일입력·월간통계·업무일지·특근보고서 등만 표시 (M/D는 미사용이라 제외)
     inspectorHiddenTabs.forEach(tab => {
       const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
       if (btn) btn.style.display = 'none';
@@ -164,6 +176,9 @@ function _applyRoleUI() {
       const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
       if (btn) btn.style.display = 'none';
     });
+    // 로그아웃은 새로고침을 하지 않으므로(md_logout), 앞서 로그인한 관리자·검사관이
+    // 숨겨둔 M/D를 여기서 되살려야 한다. 일반에게는 이게 유일하게 보이는 탭이다.
+    unusedTabs.forEach(t => setTab(t, true));
     switchToTab('manday');
   }
 }
