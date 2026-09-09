@@ -1,6 +1,6 @@
 /* ============================================================
    tbm.js — TBM 회의록 모듈 (탭⑫)
-   사진 뭉치를 떨구면 촬영일별로 자동 정리되고, 그날 출근자·작업내용이
+   사진 뭉치를 떨구면 촬영일별로 자동 정리되고, 그날 출근자·작업예정이
    자동으로 채워진다. 밀린 날짜를 몰아서 처리하는 것이 이 화면의 목적이다.
    공용 헬퍼(EXIF 판별·압축·업로드·자동채움)는 tbm-shared.js에 있다.
    ============================================================ */
@@ -92,7 +92,7 @@ function tbmBuildShell() {
         '<input type="file" id="tbm-drop-input" accept="image/*" multiple hidden>' +
         '<div class="tbm-drop-icon">📥</div>' +
         '<div class="tbm-drop-main">찍어둔 TBM 사진을 여기에 드래그하거나 클릭해서 고르세요</div>' +
-        '<div class="tbm-drop-sub">촬영일을 읽어 날짜별로 자동 분류하고, 그날 출근자·작업내용까지 채워 초안을 만듭니다. 한 달치를 한 번에 던져도 됩니다.</div>' +
+        '<div class="tbm-drop-sub">촬영일을 읽어 날짜별로 자동 분류하고, 그날 출근자·작업예정까지 채워 초안을 만듭니다. 한 달치를 한 번에 던져도 됩니다.</div>' +
       '</div>' +
       '<div class="tbm-phone">📱 폰에서 올리려면 <a href="tbm.html" target="_blank" rel="noopener">tbm.html</a> — 갤러리에서 여러 장 골라 올리면 여기에 날짜별로 들어옵니다. ' +
         '<button class="tbm-btn tbm-btn-sm" onclick="tbmToggleQR()">QR 보기</button>' +
@@ -327,7 +327,7 @@ function tbmRenderEditor() {
           '<label><input type="radio" name="tbm-risk" value="no"' + (rec.riskAssess === 'no' ? ' checked' : '') + dis + '> 아니오</label>' +
         '</span></label>' +
       '</div>' +
-      '<label class="tbm-fld tbm-fld-full"><span>작업내용</span><textarea id="tbm-f-workcontent" rows="2" placeholder="⑪일일업무보고서에서 자동으로 채워집니다"' + dis + '>' + tbmEsc(rec.workContent) + '</textarea></label>' +
+      '<label class="tbm-fld tbm-fld-full"><span>작업예정</span><textarea id="tbm-f-workcontent" rows="2" placeholder="⑪일일업무보고서에서 자동으로 채워집니다"' + dis + '>' + tbmEsc(rec.workContent) + '</textarea></label>' +
     '</div>' +
 
     /* ② 잠재위험요인 */
@@ -606,7 +606,7 @@ function tbmToggleStatus() {
   tbmMsg(rec.status === 'done' ? '작성완료로 표시했습니다' : '미작성으로 되돌렸습니다', 'success');
 }
 
-/** 참석자·작업내용을 그날 데이터로 다시 끌어온다 (저장과는 분리된 명시적 동작) */
+/** 참석자·작업예정을 그날 데이터로 다시 끌어온다 (저장과는 분리된 명시적 동작) */
 function tbmAutoFill() {
   if (tbmIsViewer()) return;
   const rec = tbmFindByDate(_tbmDate);
@@ -619,9 +619,9 @@ function tbmAutoFill() {
   const work = tbmAutoWork(rec.date);
   if (work.workName || work.workContent) {
     rec.workName = work.workName; rec.workContent = work.workContent;
-    filled.push('작업내용');
+    filled.push('작업예정');
   } else {
-    kept.push('작업명·작업내용은 ⑪일일보고서에 ' + rec.date + ' 기록이 없어 비워둠');
+    kept.push('작업명·작업예정은 ⑪일일보고서에 ' + rec.date + ' 기록이 없어 비워둠');
   }
 
   const auto = tbmAutoParticipants(rec.date);
@@ -942,7 +942,7 @@ function tbmPrintDoc(rec) {
           '<td class="k">TBM 장소</td><td>' + e(rec.tbmPlace) + '</td></tr>' +
       '<tr><td class="k">작 업 명</td><td>' + e(rec.workName) + '</td>' +
           '<td class="k">위험성평가</td><td class="nw">' + chk(rec.riskAssess === 'yes') + ' 예 &nbsp;&nbsp; ' + chk(rec.riskAssess === 'no') + ' 아니오</td></tr>' +
-      '<tr><td class="k">작업내용</td><td colspan="3">' + e(rec.workContent) + '</td></tr>' +
+      '<tr><td class="k">작업예정</td><td colspan="3">' + e(rec.workContent) + '</td></tr>' +
     '</table>' +
 
     '<div class="tp-sec">■ 잠재위험요인 및 대책</div>' +
