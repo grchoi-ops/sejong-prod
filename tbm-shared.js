@@ -178,17 +178,140 @@ async function tbmUploadPhoto(file, date) {
 }
 
 /* ══════════════════════════════════════════
+   위험요인 프리셋 — 기존 TBM 앱(Firebase판)의 19종을 그대로 이식.
+   폰 업로드 페이지도 초안 기본값을 만들 때 참조하므로 공용 파일에 둔다.
+   ══════════════════════════════════════════ */
+
+const TBM_PRESETS = [
+  { category: '추락·낙하', icon: '🪜', items: [
+    { label: '고소작업 추락', risk: '고소작업 중 발판 미끄러짐으로 인한 추락', ct: '안전대 착용, 발판 고정 확인, 안전난간 설치' },
+    { label: '사다리 전도',   risk: '사다리 이용 중 전도로 인한 추락',           ct: '사다리 고정 확인, 3점 지지 준수, 2인 1조 작업' },
+    { label: '개구부 추락',   risk: '개구부·홀 주변 안전조치 미흡으로 인한 추락', ct: '개구부 덮개 설치·고정, 안전난간 설치' },
+    { label: '자재 낙하',     risk: '고소에서 자재·공구 낙하로 인한 하부 작업자 부상', ct: '낙하물 방지망 설치, 공구 안전줄 사용, 하부 통제구역 설정' },
+  ]},
+  { category: '끼임·협착', icon: '⚙️', items: [
+    { label: '회전체 협착',    risk: '기계 회전부위(기어·벨트·롤러)에 신체 접촉·협착', ct: '방호커버 확인, 전원 차단, LOTO 실시' },
+    { label: '문·게이트 끼임', risk: '자동문·셔터 작동 중 신체 끼임',              ct: '작동 전 주변 확인, 감지센서 점검' },
+    { label: '중장비 협착',    risk: '차량·중장비 이동 시 작업자 협착',            ct: '유도자 배치, 작업반경 출입 통제, 경광등 확인' },
+  ]},
+  { category: '전기·화재', icon: '⚡', items: [
+    { label: '감전',           risk: '젖은 환경 또는 노출 전선 접촉으로 인한 감전', ct: '절연장갑·절연공구 사용, 전원 차단 확인, 접지 점검' },
+    { label: '용접 화재',      risk: '용접·절단 작업 중 불티 비산으로 인한 화재',   ct: '방화포 설치, 가연물 제거, 소화기 비치, 화재감시자 배치' },
+    { label: '가스 누출·폭발', risk: '가연성 가스 누출로 인한 화재·폭발',          ct: '가스감지기 사용, 환기 확보, 점화원 제거, 밸브 잠금 확인' },
+  ]},
+  { category: '중량물·운반', icon: '🏗️', items: [
+    { label: '중량물 낙하',    risk: '크레인·호이스트 작업 중 중량물 낙하',         ct: '줄걸이 상태 확인, 하부 출입 금지, 신호수 배치' },
+    { label: '요통·근골격계',  risk: '중량물 무리한 취급으로 인한 요통·근골격계 부상', ct: '팀 리프팅(2인 이상), 보조기구 활용, 올바른 자세' },
+    { label: '운반 중 충돌',   risk: '지게차·이동대차 운반 중 보행자 충돌',         ct: '보행자 통로 분리, 제한속도 준수, 경고등 점등' },
+  ]},
+  { category: '화학물질·분진', icon: '🧪', items: [
+    { label: '유해가스 흡입',  risk: '밀폐공간 내 유해가스 흡입으로 인한 중독·질식', ct: '가스 농도 측정 후 입장, 강제 환기, 공기호흡기 착용' },
+    { label: '화학물질 접촉',  risk: '유해 화학물질 누출·비산으로 인한 피부·눈 손상', ct: 'MSDS 확인, 보호장갑·보안경·보호복, 세안설비 위치 파악' },
+    { label: '분진 흡입',      risk: '연마·절삭 작업 분진 흡입으로 인한 직업성 질환', ct: '방진마스크 착용, 집진기 가동, 살수 작업 병행' },
+  ]},
+  { category: '기상·환경', icon: '🌦️', items: [
+    { label: '강풍',           risk: '강풍으로 인한 구조물 붕괴 및 작업자 위험',    ct: '풍속 10m/s 이상 시 고소·크레인 작업 중지' },
+    { label: '폭염·열사병',    risk: '고온 환경 작업 중 열사병·열경련 발생',        ct: '충분한 수분 섭취, 정기 휴식, 폭염 경보 시 작업 단축' },
+    { label: '결빙·미끄러짐',  risk: '결빙된 통로에서 미끄러져 골절 발생',          ct: '제설·제빙 실시, 미끄럼 방지 덧신 착용, 위험구역 표시' },
+  ]},
+];
+
+/* ── 초안 기본 선택 ──
+   위험요인 3건을 미리 골라둔다. 매일 같은 3건이 박혀 있으면 형식적인
+   문서가 되므로 날짜마다 다르게 뽑되, 계절과 안 맞는 항목(여름의 결빙,
+   겨울의 폭염)은 절대 안 나오게 한다.
+
+   '랜덤'이지만 날짜를 씨앗으로 쓴다. 같은 날짜는 몇 번을 다시 만들어도
+   같은 3건이 나와야 한다 — 화면에서 본 것과 인쇄물이 달라지거나,
+   자동 채움을 누를 때마다 내용이 바뀌면 문서를 믿을 수 없다. */
+
+/* 제관·용접·가공 작업에 연중 해당되는 항목만 추린 풀.
+   밀폐공간·화학물질처럼 특수 작업에서만 나오는 항목은 뺐다 —
+   필요하면 프리셋 태그를 눌러 직접 넣는다. */
+const TBM_GENERAL_LABELS = [
+  '고소작업 추락', '사다리 전도', '자재 낙하',
+  '회전체 협착', '중장비 협착', '운반 중 충돌',
+  '감전', '용접 화재',
+  '중량물 낙하', '요통·근골격계', '분진 흡입',
+  '강풍'
+];
+
+const TBM_HAZARD_COUNT = 3;
+
+/** 그 계절에만 반드시 끼워 넣는 항목. 봄·가을은 없다(강풍은 일반 풀에 있다). */
+function tbmSeasonLabel(date) {
+  const m = Number(String(date).split('-')[1]);
+  if (m >= 6 && m <= 8) return '폭염·열사병';
+  if (m === 12 || m <= 2) return '결빙·미끄러짐';
+  return null;
+}
+
+function tbmPresetByLabel(label) {
+  for (const cat of TBM_PRESETS) {
+    for (const it of cat.items) if (it.label === label) return it;
+  }
+  return null;
+}
+
+/** 날짜 문자열 하나로 결정되는 난수 — 같은 날짜면 항상 같은 순서가 나온다 */
+function tbmSeededPick(list, n, seedStr) {
+  let seed = 0;
+  for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
+  const pool = list.slice();
+  const out = [];
+  while (out.length < n && pool.length) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;      // 선형 합동법
+    out.push(pool.splice(seed % pool.length, 1)[0]);
+  }
+  return out;
+}
+
+/** 그날 초안에 미리 넣을 위험요인 (계절 고정분 + 나머지는 날짜별 랜덤) */
+function tbmDefaultPresets(date) {
+  const season = tbmSeasonLabel(date);
+  const labels = season ? [season] : [];
+  const rest = TBM_GENERAL_LABELS.filter(l => labels.indexOf(l) === -1);
+  return labels
+    .concat(tbmSeededPick(rest, TBM_HAZARD_COUNT - labels.length, String(date)))
+    .map(tbmPresetByLabel)
+    .filter(Boolean);
+}
+
+function tbmDefaultHazards(date) {
+  // 중점 여부는 그날 판단이라 자동으로 찍지 않는다
+  return tbmDefaultPresets(date).map((it, i) => ({ no: i + 1, isKey: false, risk: it.risk, measure: it.ct }));
+}
+
+/** 프리셋을 누르면 안전조치 표에도 같이 들어가므로 기본값도 짝을 맞춘다 */
+function tbmDefaultSafetyChecks(date) {
+  return tbmDefaultPresets(date).map(it => ({ factor: it.label, action: 'yes', note: '' }));
+}
+
+/* ══════════════════════════════════════════
    자동 채움 — 앱이 이미 가진 그날 데이터를 활용
    ══════════════════════════════════════════ */
 
-/** 그날 '출근'으로 기록된 인원 (입사 전·삭제 인원 제외) */
+/**
+ * 그날 참석자. 기본은 ④일일 입력의 '출근' 기록이다.
+ * 다만 관리부(div === '관리') 5명은 일일 입력에 거의 안 잡혀서 늘 빠지는데,
+ * 실제로는 TBM에 항상 참석한다. 그래서 관리부는 기록이 없어도 포함하고,
+ * 그날 연차·휴무로 '명시적으로' 기록된 경우에만 뺀다
+ * (반차는 오전 TBM에 참석하므로 포함).
+ */
+const TBM_ALWAYS_DIV = '관리';
+const TBM_ABSENT_STATUS = ['연차', '휴무'];
+
 function tbmAutoParticipants(date) {
-  const day = (state.dailyData || {})[date];
-  if (!day || !day.emp) return [];
+  const day = (state.dailyData || {})[date] || {};
+  const emp = day.emp || {};
   return (state.employees || [])
     .filter(e => e && !e.deleted)
     .filter(e => !(e.hireDate && date < e.hireDate))
-    .filter(e => { const ed = day.emp[e.id]; return ed && ed.status === '출근'; })
+    .filter(e => {
+      const ed = emp[e.id];
+      if (e.div === TBM_ALWAYS_DIV) return !(ed && TBM_ABSENT_STATUS.indexOf(ed.status) !== -1);
+      return !!(ed && ed.status === '출근');
+    })
     .map(e => e.name);
 }
 
@@ -214,7 +337,8 @@ function tbmAutoWork(date) {
    레코드
    ══════════════════════════════════════════ */
 
-const TBM_DEFAULTS = { timeStart: '08:00', timeEnd: '08:10', tbmPlace: '3공장', leaderDept: '생산부' };
+const TBM_DEFAULTS = { timeStart: '08:00', timeEnd: '08:10', tbmPlace: '3공장', leaderDept: '생산부',
+                       riskAssess: 'yes', inspection: '이상 없음' };
 
 function tbmRecords() {
   if (!Array.isArray(state.tbmRecords)) state.tbmRecords = [];
@@ -248,17 +372,17 @@ function tbmNewRecord(date) {
     timeStart: prev ? prev.timeStart : TBM_DEFAULTS.timeStart,
     timeEnd:   prev ? prev.timeEnd   : TBM_DEFAULTS.timeEnd,
     tbmPlace:  prev ? prev.tbmPlace  : TBM_DEFAULTS.tbmPlace,
-    riskAssess: '',
+    riskAssess: TBM_DEFAULTS.riskAssess,
     workName:    work.workName,
     workContent: work.workContent,
-    hazards: [],
+    hazards: tbmDefaultHazards(date),
     leader: prev && prev.leader ? { dept: prev.leader.dept, position: prev.leader.position, name: prev.leader.name } : {
       dept: TBM_DEFAULTS.leaderDept,
       position: me ? (me.position || '') : '',
       name: me ? me.name : ''
     },
-    safetyChecks: [],
-    inspection: '',
+    safetyChecks: tbmDefaultSafetyChecks(date),
+    inspection: TBM_DEFAULTS.inspection,
     closingMeeting: '',
     participants: tbmAutoParticipants(date),
     photos: [],

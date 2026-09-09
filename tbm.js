@@ -5,40 +5,6 @@
    공용 헬퍼(EXIF 판별·압축·업로드·자동채움)는 tbm-shared.js에 있다.
    ============================================================ */
 
-/* 기존 TBM 앱(Firebase판)의 프리셋 19종을 그대로 이식 */
-const TBM_PRESETS = [
-  { category: '추락·낙하', icon: '🪜', items: [
-    { label: '고소작업 추락', risk: '고소작업 중 발판 미끄러짐으로 인한 추락', ct: '안전대 착용, 발판 고정 확인, 안전난간 설치' },
-    { label: '사다리 전도',   risk: '사다리 이용 중 전도로 인한 추락',           ct: '사다리 고정 확인, 3점 지지 준수, 2인 1조 작업' },
-    { label: '개구부 추락',   risk: '개구부·홀 주변 안전조치 미흡으로 인한 추락', ct: '개구부 덮개 설치·고정, 안전난간 설치' },
-    { label: '자재 낙하',     risk: '고소에서 자재·공구 낙하로 인한 하부 작업자 부상', ct: '낙하물 방지망 설치, 공구 안전줄 사용, 하부 통제구역 설정' },
-  ]},
-  { category: '끼임·협착', icon: '⚙️', items: [
-    { label: '회전체 협착',    risk: '기계 회전부위(기어·벨트·롤러)에 신체 접촉·협착', ct: '방호커버 확인, 전원 차단, LOTO 실시' },
-    { label: '문·게이트 끼임', risk: '자동문·셔터 작동 중 신체 끼임',              ct: '작동 전 주변 확인, 감지센서 점검' },
-    { label: '중장비 협착',    risk: '차량·중장비 이동 시 작업자 협착',            ct: '유도자 배치, 작업반경 출입 통제, 경광등 확인' },
-  ]},
-  { category: '전기·화재', icon: '⚡', items: [
-    { label: '감전',           risk: '젖은 환경 또는 노출 전선 접촉으로 인한 감전', ct: '절연장갑·절연공구 사용, 전원 차단 확인, 접지 점검' },
-    { label: '용접 화재',      risk: '용접·절단 작업 중 불티 비산으로 인한 화재',   ct: '방화포 설치, 가연물 제거, 소화기 비치, 화재감시자 배치' },
-    { label: '가스 누출·폭발', risk: '가연성 가스 누출로 인한 화재·폭발',          ct: '가스감지기 사용, 환기 확보, 점화원 제거, 밸브 잠금 확인' },
-  ]},
-  { category: '중량물·운반', icon: '🏗️', items: [
-    { label: '중량물 낙하',    risk: '크레인·호이스트 작업 중 중량물 낙하',         ct: '줄걸이 상태 확인, 하부 출입 금지, 신호수 배치' },
-    { label: '요통·근골격계',  risk: '중량물 무리한 취급으로 인한 요통·근골격계 부상', ct: '팀 리프팅(2인 이상), 보조기구 활용, 올바른 자세' },
-    { label: '운반 중 충돌',   risk: '지게차·이동대차 운반 중 보행자 충돌',         ct: '보행자 통로 분리, 제한속도 준수, 경고등 점등' },
-  ]},
-  { category: '화학물질·분진', icon: '🧪', items: [
-    { label: '유해가스 흡입',  risk: '밀폐공간 내 유해가스 흡입으로 인한 중독·질식', ct: '가스 농도 측정 후 입장, 강제 환기, 공기호흡기 착용' },
-    { label: '화학물질 접촉',  risk: '유해 화학물질 누출·비산으로 인한 피부·눈 손상', ct: 'MSDS 확인, 보호장갑·보안경·보호복, 세안설비 위치 파악' },
-    { label: '분진 흡입',      risk: '연마·절삭 작업 분진 흡입으로 인한 직업성 질환', ct: '방진마스크 착용, 집진기 가동, 살수 작업 병행' },
-  ]},
-  { category: '기상·환경', icon: '🌦️', items: [
-    { label: '강풍',           risk: '강풍으로 인한 구조물 붕괴 및 작업자 위험',    ct: '풍속 10m/s 이상 시 고소·크레인 작업 중지' },
-    { label: '폭염·열사병',    risk: '고온 환경 작업 중 열사병·열경련 발생',        ct: '충분한 수분 섭취, 정기 휴식, 폭염 경보 시 작업 단축' },
-    { label: '결빙·미끄러짐',  risk: '결빙된 통로에서 미끄러져 골절 발생',          ct: '제설·제빙 실시, 미끄럼 방지 덧신 착용, 위험구역 표시' },
-  ]},
-];
 
 const TBM_DIV_LABEL = { 제관: '제관사', 용접: '용접사', 보조: '보조사', 가공: '가공반', 구동: '구동부', 공사: '공사부' };
 const TBM_DIV_ORDER = ['제관', '용접', '보조', '가공', '구동', '공사'];
@@ -337,7 +303,8 @@ function tbmRenderEditor() {
   box.innerHTML =
     '<div class="tbm-ed-head">' +
       '<div class="tbm-ed-title">' + tbmEsc(tbmKorDate(rec.date)) +
-        '<span class="tbm-badge ' + (rec.status === 'done' ? 'done' : 'draft') + '">' + (rec.status === 'done' ? '작성완료' : '미작성') + '</span>' +
+        '<button class="tbm-badge tbm-badge-btn ' + (rec.status === 'done' ? 'done' : 'draft') + '" onclick="tbmToggleStatus()"' + dis +
+          ' title="눌러서 상태 바꾸기 — 인쇄하면 자동으로 완료가 됩니다">' + (rec.status === 'done' ? '작성완료' : '미작성') + '</button>' +
       '</div>' +
       '<div class="tbm-ed-actions">' +
         '<span class="tbm-savestatus" id="tbm-savestatus"></span>' +
@@ -621,29 +588,71 @@ function tbmClearParticipants() {
   tbmScheduleLocalSave();
 }
 
+/**
+ * 미작성 ↔ 작성완료 수동 전환.
+ * 인쇄하면 자동으로 완료가 되지만, 배치만 확인하려고 시험 삼아 뽑는 경우가 있어
+ * 되돌릴 길이 필요하다 (이게 없으면 삭제 후 재작성밖에 방법이 없어 사진까지 날아간다).
+ */
+function tbmToggleStatus() {
+  if (tbmIsViewer()) return;
+  const rec = tbmFindByDate(_tbmDate);
+  if (!rec) return;
+  tbmCollect();
+  rec.status = rec.status === 'done' ? 'draft' : 'done';
+  rec.updatedAt = Date.now();
+  tbmRenderList();
+  tbmRenderEditor();
+  tbmSave(true);
+  tbmMsg(rec.status === 'done' ? '작성완료로 표시했습니다' : '미작성으로 되돌렸습니다', 'success');
+}
+
 /** 참석자·작업내용을 그날 데이터로 다시 끌어온다 (저장과는 분리된 명시적 동작) */
 function tbmAutoFill() {
   if (tbmIsViewer()) return;
   const rec = tbmFindByDate(_tbmDate);
   if (!rec) return;
   tbmCollect();
+  const filled = [];   // 새로 채운 것
+  const kept   = [];   // 이미 쓴 내용이 있어 건드리지 않은 것
+
+  // ── 그날 데이터에서 끌어오는 것들은 덮어쓴다 (다시 불러오는 게 이 버튼의 목적)
   const work = tbmAutoWork(rec.date);
-  const auto = tbmAutoParticipants(rec.date);
-  const msgs = [];
   if (work.workName || work.workContent) {
     rec.workName = work.workName; rec.workContent = work.workContent;
-    msgs.push('작업내용');
+    filled.push('작업내용');
+  } else {
+    kept.push('작업명·작업내용은 ⑪일일보고서에 ' + rec.date + ' 기록이 없어 비워둠');
   }
-  if (auto.length) { rec.participants = auto; msgs.push('참석자 ' + auto.length + '명'); }
+
+  const auto = tbmAutoParticipants(rec.date);
+  if (auto.length) { rec.participants = auto; filled.push('참석자 ' + auto.length + '명'); }
+  else kept.push('참석자는 ④일일 입력에 그날 출근 기록이 없어 비워둠');
+
   const prev = tbmPrevRecord(rec.date);
   if (prev) {
     rec.timeStart = prev.timeStart; rec.timeEnd = prev.timeEnd; rec.tbmPlace = prev.tbmPlace;
     if (prev.leader) rec.leader = { dept: prev.leader.dept, position: prev.leader.position, name: prev.leader.name };
-    msgs.push('시간·장소·리더');
+    filled.push('시간·장소·리더');
   }
+
+  // ── 아래는 '기본값'이라 이미 손댄 내용이 있으면 덮어쓰지 않는다.
+  //    자동 채움을 다시 눌렀다고 공들여 쓴 위험요인이 날아가면 안 된다.
+  if (!(rec.hazards || []).length) {
+    rec.hazards = tbmDefaultHazards(rec.date);
+    if (!(rec.safetyChecks || []).length) rec.safetyChecks = tbmDefaultSafetyChecks(rec.date);
+    const season = tbmSeasonLabel(rec.date);   // 봄·가을은 고정 항목이 없어 null
+    filled.push('위험요인 ' + rec.hazards.length + '건' + (season ? '(' + season + ' 포함)' : ''));
+  } else {
+    kept.push('위험요인은 이미 작성돼 있어 그대로 둠');
+  }
+  if (!rec.riskAssess) { rec.riskAssess = TBM_DEFAULTS.riskAssess; filled.push('위험성평가'); }
+  if (!String(rec.inspection || '').trim()) { rec.inspection = TBM_DEFAULTS.inspection; filled.push('안전점검 결과'); }
+
   tbmRenderEditor();
   tbmScheduleLocalSave();
-  tbmMsg(msgs.length ? msgs.join(' / ') + '을(를) 다시 채웠습니다' : '가져올 데이터가 없습니다', msgs.length ? 'success' : '');
+  if (!filled.length && !kept.length) { tbmMsg('가져올 데이터가 없습니다'); return; }
+  tbmMsg((filled.length ? filled.join(' / ') + ' 채움' : '새로 채운 항목 없음') +
+         (kept.length ? ' — ' + kept.join(', ') : ''), filled.length ? 'success' : '');
 }
 
 /* ── 사진 ── */
@@ -858,6 +867,17 @@ function tbmPrintRecords(recs, title) {
   tbmMsg(recs.length + '건 인쇄', 'success');
 }
 
+/**
+ * 작성자 서명. tbm-sign-{이름}.png 가 있으면 그 도장을, 없으면 이름 글자를 찍는다.
+ * 파일 존재 여부를 미리 알 수 없으므로 onerror로 떨어뜨린다 — 새 작성자가 생기면
+ * 코드를 고칠 필요 없이 같은 규칙으로 png만 추가하면 된다.
+ */
+function tbmSignHTML(name) {
+  if (!name) return '';
+  const src = 'tbm-sign-' + encodeURIComponent(name) + '.png';
+  return '<img src="' + tbmEsc(src) + '" alt="' + tbmEsc(name) + '" onerror="this.replaceWith(this.alt)">';
+}
+
 function tbmPrintDoc(rec) {
   const e = tbmEsc;
   const hazards = (rec.hazards || []).length ? rec.hazards : [{ no: 1, risk: '', measure: '' }, { no: 2, risk: '', measure: '' }, { no: 3, risk: '', measure: '' }];
@@ -896,7 +916,7 @@ function tbmPrintDoc(rec) {
     '<div class="tp-head">' +
       '<div class="tp-title"><span>TOOL BOX MEETING</span>TBM 회의록</div>' +
       '<div class="tp-appr">' +
-        '<div class="tp-appr-cell"><div class="l">작 성</div><div class="s">' + e(rec.createdBy || (rec.leader && rec.leader.name) || '') + '</div></div>' +
+        '<div class="tp-appr-cell"><div class="l">작 성</div><div class="s">' + tbmSignHTML(rec.createdBy || (rec.leader && rec.leader.name) || '') + '</div></div>' +
         '<div class="tp-appr-cell"><div class="l">승 인</div><div class="s"><img src="tbm-sign-approver.png" alt=""></div></div>' +
       '</div>' +
     '</div>' +
@@ -1001,6 +1021,9 @@ function tbmInjectStyle() {
 .tbm-badge { font-size:10px; font-weight:700; padding:1px 6px; border-radius:9px; white-space:nowrap; }
 .tbm-badge.draft { background:rgba(255,71,87,.16); color:var(--red); }
 .tbm-badge.done  { background:rgba(46,213,115,.16); color:var(--green); }
+.tbm-badge-btn { border:1px solid transparent; font-family:inherit; cursor:pointer; }
+.tbm-badge-btn:hover:not(:disabled) { border-color:currentColor; }
+.tbm-badge-btn:disabled { cursor:default; }
 .tbm-side-foot { padding:8px 10px; border-top:1px solid var(--tbm-line); background:var(--surface2); }
 .tbm-side-foot-title { font-size:11px; font-weight:700; color:var(--tbm-mut); margin-bottom:5px; }
 .tbm-range { display:flex; align-items:center; gap:3px; margin-bottom:5px; }
