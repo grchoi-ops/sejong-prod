@@ -720,6 +720,14 @@
   <!-- 저장된 보고서 목록 -->
   <div class="card" style="margin-top:12px;">
     <div class="card-title" style="margin-bottom:10px;">📁 저장된 보고서</div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+      <input type="text" id="ot-list-q" placeholder="현장·근무자 이름 검색" style="flex:1;min-width:0;font-size:13px;" oninput="ot_renderSavedList()">
+      <input type="date" id="ot-list-date" title="날짜로 찾기" style="flex-shrink:0;width:132px;font-size:12px;"
+        onchange="document.getElementById('ot-list-date-clear').hidden = !this.value; ot_renderSavedList();">
+      <button type="button" id="ot-list-date-clear" title="날짜 필터 해제" hidden
+        onclick="document.getElementById('ot-list-date').value=''; this.hidden=true; ot_renderSavedList();"
+        style="flex-shrink:0;width:22px;height:22px;border:1px solid var(--border);background:transparent;color:var(--text3);border-radius:2px;cursor:pointer;font-size:13px;line-height:1;">×</button>
+    </div>
     <div id="ot-saved-list"></div>
   </div>
 </section>
@@ -928,6 +936,13 @@ function ot_save() {
   saveFieldsToSheet(['overtimeReports']).catch(() => {});
 }
 
+function ot_reportMatchesDate(r, dateFilter) {
+  const d1 = r.date1 || r.date || '';
+  if (!d1) return false;
+  if (!r.date2) return d1 === dateFilter;
+  return d1 <= dateFilter && dateFilter <= r.date2;
+}
+
 function ot_renderSavedList() {
   const el = document.getElementById('ot-saved-list');
   if (!el) return;
@@ -936,7 +951,27 @@ function ot_renderSavedList() {
     el.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:6px 0;">저장된 보고서가 없습니다.</div>';
     return;
   }
-  el.innerHTML = list.map((r, i) => {
+
+  const q = (document.getElementById('ot-list-q')?.value || '').trim().toLowerCase();
+  const dateFilter = document.getElementById('ot-list-date')?.value || '';
+
+  // 원래 배열의 인덱스를 유지해야 불러오기/삭제 버튼이 올바른 항목을 가리킨다
+  let items = list.map((r, i) => ({ r, i }));
+  if (dateFilter) items = items.filter(({ r }) => ot_reportMatchesDate(r, dateFilter));
+  if (q) {
+    items = items.filter(({ r }) => {
+      const names = (r.workers || []).map(w => w.name).filter(Boolean).join(' ');
+      const hay = [r.date1 || r.date, r.date2, r.location, names].filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  if (!items.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:6px 0;">검색 결과가 없습니다.</div>';
+    return;
+  }
+
+  el.innerHTML = items.map(({ r, i }) => {
     const kindTxt  = (r.reportKind === 'overtime') ? '잔업' : '특근';
     const typeLabel = kindTxt + ' ' + ([r.typeApply ? '신청서' : '', r.typeResult ? '결과보고서' : ''].filter(Boolean).join('+') || '미지정');
     const workers   = (r.workers || []).filter(w => w.name).length;

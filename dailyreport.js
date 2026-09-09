@@ -146,7 +146,11 @@ function drBuildShell() {
         <strong>작성 기록</strong>
         <button id="dr-drawer-close" title="닫기">×</button>
       </div>
-      <input class="dr-drawer-q" id="dr-drawer-q" placeholder="프로젝트명·업무 내용 검색">
+      <div class="dr-drawer-search">
+        <input class="dr-drawer-q" id="dr-drawer-q" placeholder="프로젝트명·업무 내용·날짜(2026-09-04) 검색">
+        <input type="date" class="dr-drawer-date" id="dr-drawer-date" title="날짜로 찾기">
+        <button type="button" class="dr-drawer-date-clear" id="dr-drawer-date-clear" title="날짜 필터 해제" hidden>×</button>
+      </div>
       <div class="dr-drawer-list" id="dr-drawer-list"></div>
       <div class="dr-drawer-foot">
         <button class="btn btn-ghost btn-sm" id="dr-export-csv">CSV 내보내기</button>
@@ -223,6 +227,15 @@ function drBuildShell() {
   });
   document.getElementById('dr-drawer-close').addEventListener('click', () => document.getElementById('dr-drawer').classList.remove('open'));
   document.getElementById('dr-drawer-q').addEventListener('input', drRenderHistoryList);
+  document.getElementById('dr-drawer-date').addEventListener('change', () => {
+    document.getElementById('dr-drawer-date-clear').hidden = !document.getElementById('dr-drawer-date').value;
+    drRenderHistoryList();
+  });
+  document.getElementById('dr-drawer-date-clear').addEventListener('click', () => {
+    document.getElementById('dr-drawer-date').value = '';
+    document.getElementById('dr-drawer-date-clear').hidden = true;
+    drRenderHistoryList();
+  });
   document.getElementById('dr-export-csv').addEventListener('click', drExportCsv);
   document.getElementById('dr-bulk-delete').addEventListener('click', drBulkDeletePrompt);
 
@@ -587,6 +600,7 @@ function drHideToast() { document.getElementById('dr-toast').classList.remove('o
    ══════════════════════════════════════════ */
 function drRenderHistoryList() {
   const q = (document.getElementById('dr-drawer-q').value || '').trim().toLowerCase();
+  const dateFilter = document.getElementById('dr-drawer-date').value || '';
   const list = document.getElementById('dr-drawer-list');
   const dates = Object.keys(state.dailyReports || {}).sort((a, b) => b.localeCompare(a));
   let items = dates.map(d => {
@@ -596,6 +610,7 @@ function drRenderHistoryList() {
     const n = (rec.today || []).length + (rec.heavy || []).length + (rec.next || []).length;
     return { date: d, sum, n };
   });
+  if (dateFilter) items = items.filter(it => it.date === dateFilter);
   if (q) items = items.filter(it => (it.date + ' ' + it.sum).toLowerCase().includes(q));
   if (!items.length) {
     list.innerHTML = `<div class="dr-empty">${dates.length ? '검색 결과가 없습니다.' : '작성한 보고서가 여기에 날짜별로 쌓입니다.'}</div>`;
@@ -871,7 +886,11 @@ function drInjectStyle() {
     .dr-drawer.open { transform:none; }
     .dr-drawer-head { padding:14px 16px 10px; font-size:14px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); color:var(--text); }
     .dr-drawer-head button { background:none; border:0; font-size:18px; cursor:pointer; color:var(--text2); line-height:1; }
-    .dr-drawer-q { margin:10px 12px; padding:7px 9px; width:calc(100% - 24px); }
+    .dr-drawer-search { display:flex; align-items:center; gap:6px; margin:10px 12px; }
+    .dr-drawer-q { padding:7px 9px; flex:1; min-width:0; }
+    .dr-drawer-date { padding:6px 7px; flex-shrink:0; width:132px; font-size:12px; }
+    .dr-drawer-date-clear { flex-shrink:0; width:22px; height:22px; border:1px solid var(--border); background:transparent; color:var(--text3); border-radius:2px; cursor:pointer; font-size:13px; line-height:1; }
+    .dr-drawer-date-clear:hover { background:#FCE9E1; border-color:var(--accent4); color:#C94A15; }
     .dr-drawer-list { flex:1; overflow:auto; padding:0 8px 12px; }
     .dr-item { display:flex; align-items:stretch; gap:4px; background:var(--surface2); border:1px solid var(--border); border-radius:3px; margin-bottom:6px; }
     .dr-item:hover { border-color:var(--accent); }
