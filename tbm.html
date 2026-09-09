@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=2.0, user-scalable=yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="TBM 사진">
+<meta name="theme-color" content="#f0f4f8">
+<title>TBM 사진 올리기</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+:root{
+  --bg:#f0f4f8;--surface:#ffffff;--surface2:#f0f4f8;--surface3:#e2e8f0;
+  --border:#c8d0dc;--text1:#1e293b;--text2:#475569;--text3:#64748b;
+  --accent:#2563eb;--accent2:#1d4ed8;--green:#059669;--red:#dc2626;
+  --radius:14px;--radius-sm:8px;
+}
+html,body{min-height:100%;background:var(--bg);color:var(--text1);font-family:'맑은 고딕','Malgun Gothic','Apple SD Gothic Neo',sans-serif;}
+
+.btn{border:none;cursor:pointer;font-family:inherit;border-radius:var(--radius-sm);font-size:20px;font-weight:600;padding:15px 24px;transition:all .15s;}
+.btn-primary{background:var(--accent);color:#fff;}
+.btn-primary:active{background:var(--accent2);}
+.btn-primary:disabled{background:var(--surface3);color:var(--text3);}
+.btn-ghost{background:var(--surface3);color:var(--text2);border:1px solid var(--border);}
+.btn-full{width:100%;display:block;}
+input{font-family:inherit;font-size:19px;background:var(--surface3);color:var(--text1);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;width:100%;outline:none;}
+input:focus{border-color:var(--accent);}
+.toast{position:fixed;bottom:32px;left:50%;transform:translateX(-50%) translateY(60px);background:var(--surface);color:var(--text1);padding:12px 24px;border-radius:50px;font-size:18px;z-index:9999;opacity:0;transition:all .3s;border:1px solid var(--border);pointer-events:none;max-width:90vw;text-align:center;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+.screen{display:none;}
+.screen.on{display:block;}
+
+/* 로그인 */
+#screen-login{padding:56px 24px 24px;}
+.login-logo{text-align:center;margin-bottom:28px;}
+.login-logo h1{font-size:27px;font-weight:800;}
+.login-logo p{font-size:18px;color:var(--text3);margin-top:6px;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px 20px;max-width:420px;margin:0 auto;}
+.card label{font-size:16px;color:var(--text3);font-weight:700;display:block;margin-bottom:6px;margin-top:16px;}
+.card label:first-of-type{margin-top:0;}
+.login-error{color:var(--red);font-size:16px;margin-top:10px;min-height:18px;}
+.login-hint{text-align:center;font-size:15px;color:var(--text3);margin-top:14px;}
+
+/* 본화면 */
+#screen-main{padding:16px 16px 40px;max-width:520px;margin:0 auto;}
+.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+.topbar .who{font-size:17px;color:var(--text2);font-weight:700;}
+.topbar button{background:none;border:none;color:var(--text3);font-size:16px;font-family:inherit;cursor:pointer;text-decoration:underline;}
+
+.pick{background:var(--surface);border:2px dashed var(--border);border-radius:var(--radius);padding:30px 20px;text-align:center;cursor:pointer;}
+.pick:active{border-color:var(--accent);background:#eef4ff;}
+.pick .ic{font-size:42px;}
+.pick .t{font-size:21px;font-weight:800;margin-top:8px;}
+.pick .s{font-size:16px;color:var(--text3);margin-top:6px;line-height:1.5;}
+
+.section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-top:14px;}
+.section h2{font-size:18px;font-weight:800;margin-bottom:10px;}
+.grp{display:flex;justify-content:space-between;align-items:center;padding:9px 2px;border-bottom:1px solid var(--surface3);font-size:17px;}
+.grp:last-child{border-bottom:none;}
+.grp .d{font-weight:700;}
+.grp .n{color:var(--text3);font-size:15px;}
+.grp .src{font-size:13px;color:var(--text3);}
+
+.thumbs{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+.thumbs img{width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--border);}
+
+.bar{height:10px;background:var(--surface3);border-radius:5px;overflow:hidden;margin-top:12px;}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s;}
+.progtext{font-size:15px;color:var(--text3);margin-top:6px;text-align:center;}
+
+.result{font-size:17px;line-height:1.7;}
+.result b{color:var(--green);}
+.result .fail{color:var(--red);}
+.note{font-size:14px;color:var(--text3);line-height:1.6;margin-top:12px;}
+</style>
+</head>
+<body>
+
+<!-- 로그인 -->
+<div class="screen on" id="screen-login">
+  <div class="login-logo">
+    <h1>㈜세종기술</h1>
+    <p>TBM 사진 올리기</p>
+  </div>
+  <div class="card">
+    <label>이름</label>
+    <input type="text" id="li-name" placeholder="이름을 입력하세요" autocomplete="off">
+    <label>PIN</label>
+    <input type="password" id="li-pin" placeholder="4자리 숫자" maxlength="4" inputmode="numeric">
+    <div class="login-error" id="li-error"></div>
+    <button class="btn btn-primary btn-full" style="margin-top:20px;" onclick="doLogin()">로그인</button>
+    <p class="login-hint">공수 기록 앱과 같은 이름·PIN을 씁니다</p>
+  </div>
+</div>
+
+<!-- 본화면 -->
+<div class="screen" id="screen-main">
+  <div class="topbar">
+    <div class="who" id="who"></div>
+    <button onclick="logout()">로그아웃</button>
+  </div>
+
+  <div class="pick" id="pick" onclick="document.getElementById('files').click()">
+    <input type="file" id="files" accept="image/*" multiple hidden>
+    <div class="ic">🖼</div>
+    <div class="t">갤러리에서 TBM 사진 고르기</div>
+    <div class="s">평소처럼 카메라로 찍어둔 사진을 여러 장 한꺼번에 고르세요.<br>촬영일을 읽어 날짜별로 알아서 정리합니다.</div>
+  </div>
+
+  <div class="section" id="preview" style="display:none;">
+    <h2>고른 사진 <span id="pick-count" style="color:var(--text3);font-weight:400;"></span></h2>
+    <div id="groups"></div>
+    <div class="thumbs" id="thumbs"></div>
+    <button class="btn btn-primary btn-full" style="margin-top:14px;" id="upbtn" onclick="doUpload()">올리기</button>
+    <div class="bar" id="bar" style="display:none;"><i id="barfill"></i></div>
+    <div class="progtext" id="progtext"></div>
+  </div>
+
+  <div class="section" id="result" style="display:none;">
+    <h2>올리기 완료</h2>
+    <div class="result" id="result-body"></div>
+    <div class="note">PC에서 ⑫ TBM 탭을 열면 날짜별로 초안이 만들어져 있고, 그날 출근자와 작업내용이 채워져 있습니다. 내용을 확인하고 인쇄하면 됩니다.</div>
+    <button class="btn btn-ghost btn-full" style="margin-top:14px;" onclick="reset()">사진 더 올리기</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="tbm-shared.js"></script>
+<script>
+const API_BASE = 'https://sejong-prod.vercel.app';
+
+/* tbm-shared.js가 기대하는 전역 두 개를 여기서 직접 채운다 */
+let currentUser = null;
+const state = { employees: [], dailyData: {}, dailyReports: {}, tbmRecords: [] };
+
+let picked = [];        // 고른 File 목록
+let detected = [];      // [{file, date, source}]
+let busy = false;
+
+function safeLoad(url) {
+  const sep = url.includes('?') ? '&' : '?';
+  return fetch(url + sep + '_t=' + Date.now(), { cache: 'no-store' }).then(r => r.json());
+}
+function ssGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+function ssSet(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} }
+function ssDel(k) { try { sessionStorage.removeItem(k); } catch (e) {} }
+
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+function show(id) {
+  ['screen-login', 'screen-main'].forEach(s => {
+    document.getElementById(s).classList.toggle('on', s === id);
+  });
+}
+
+/* ── 로그인 ── */
+window.addEventListener('DOMContentLoaded', async () => {
+  const saved = ssGet('tbm_session');
+  if (saved) {
+    try { currentUser = JSON.parse(saved); } catch (e) {}
+  }
+  if (currentUser) { await loadData(); enterMain(); }
+
+  document.getElementById('li-name').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  document.getElementById('li-pin').addEventListener('keydown',  e => { if (e.key === 'Enter') doLogin(); });
+  document.getElementById('files').addEventListener('change', e => onPick(e.target.files));
+});
+
+async function doLogin() {
+  const name = document.getElementById('li-name').value.trim();
+  const pin  = document.getElementById('li-pin').value.trim();
+  const err  = document.getElementById('li-error');
+  err.textContent = '';
+  if (!name) { err.textContent = '이름을 입력하세요.'; return; }
+  if (!pin)  { err.textContent = 'PIN을 입력하세요.'; return; }
+
+  err.textContent = '확인 중...';
+  try {
+    const json = await safeLoad(API_BASE + '/api/load');
+    const emps = Array.isArray(json.data && json.data.employees) ? json.data.employees : [];
+    const emp = emps.find(e => e.name === name);
+    if (!emp) { err.textContent = '등록된 이름이 아닙니다.'; return; }
+    if ((emp.pin || '0000') !== pin) {
+      err.textContent = 'PIN이 올바르지 않습니다.';
+      document.getElementById('li-pin').value = '';
+      return;
+    }
+    if (emp.mdRole === '열람용') { err.textContent = '열람용 계정은 사진을 올릴 수 없습니다.'; return; }
+
+    currentUser = { id: emp.id, name: emp.name, mdRole: emp.mdRole || '일반', position: emp.position || '' };
+    ssSet('tbm_session', JSON.stringify(currentUser));
+    applyData(json.data);
+    enterMain();
+  } catch (e) {
+    err.textContent = '서버 연결 오류. 잠시 후 다시 시도하세요.';
+  }
+}
+
+function logout() {
+  ssDel('tbm_session');
+  currentUser = null;
+  reset();
+  document.getElementById('li-pin').value = '';
+  show('screen-login');
+}
+
+function applyData(d) {
+  d = d || {};
+  state.employees    = Array.isArray(d.employees) ? d.employees : [];
+  state.dailyData    = d.dailyData    || {};
+  state.dailyReports = d.dailyReports || {};
+  state.tbmRecords   = Array.isArray(d.tbmRecords) ? d.tbmRecords : [];
+}
+
+async function loadData() {
+  try { applyData((await safeLoad(API_BASE + '/api/load')).data); }
+  catch (e) { toast('데이터를 불러오지 못했습니다'); }
+}
+
+function enterMain() {
+  document.getElementById('who').textContent = currentUser.name + '님';
+  show('screen-main');
+}
+
+/* ── 사진 고르기 → 촬영일 미리 판별 ── */
+async function onPick(fileList) {
+  const list = Array.from(fileList || []).filter(f => /^image\//.test(f.type || ''));
+  if (!list.length) { toast('사진을 고르지 않았습니다'); return; }
+  picked = list;
+
+  document.getElementById('result').style.display = 'none';
+  document.getElementById('preview').style.display = '';
+  document.getElementById('pick-count').textContent = list.length + '장';
+  document.getElementById('groups').innerHTML = '<div class="grp"><span class="d">촬영일 확인 중...</span></div>';
+
+  detected = [];
+  for (const f of list) {
+    const det = await tbmDetectDate(f);
+    detected.push({ file: f, date: det.date, source: det.source });
+  }
+  renderGroups();
+  renderThumbs(list);
+}
+
+function renderGroups() {
+  const by = {};
+  detected.forEach(d => {
+    const g = by[d.date] = by[d.date] || { n: 0, src: {} };
+    g.n++;
+    g.src[d.source] = (g.src[d.source] || 0) + 1;
+  });
+  const dates = Object.keys(by).sort();
+  document.getElementById('groups').innerHTML = dates.map(d => {
+    const g = by[d];
+    const src = Object.keys(g.src).map(s => TBM_DATE_SOURCE_LABEL[s] || s).join(', ');
+    return '<div class="grp"><span class="d">' + tbmKorDate(d) + '</span>' +
+           '<span class="n">' + g.n + '장 <span class="src">· ' + src + '</span></span></div>';
+  }).join('');
+}
+
+function renderThumbs(list) {
+  const box = document.getElementById('thumbs');
+  box.innerHTML = '';
+  list.slice(0, 12).forEach(f => {
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(f);
+    img.onload = () => URL.revokeObjectURL(img.src);
+    box.appendChild(img);
+  });
+  if (list.length > 12) {
+    const more = document.createElement('div');
+    more.style.cssText = 'width:64px;height:64px;border-radius:6px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--text3);';
+    more.textContent = '+' + (list.length - 12);
+    box.appendChild(more);
+  }
+}
+
+/* ── 올리기 ──
+   업로드가 몇 분 걸릴 수 있어, 그동안 PC에서 편집한 내용을 덮어쓰지 않도록
+   ① 새 사진만 담은 임시 목록으로 먼저 올리고
+   ② 저장 직전에 서버 최신본을 받아 사진만 합쳐 넣는다. */
+async function doUpload() {
+  if (busy || !picked.length) return;
+  busy = true;
+  const btn = document.getElementById('upbtn');
+  btn.disabled = true;
+  document.getElementById('bar').style.display = '';
+
+  const fill = document.getElementById('barfill');
+  const ptxt = document.getElementById('progtext');
+
+  const fresh = [];
+  state.tbmRecords = fresh;      // tbmFindOrCreateDraft가 여기에만 쌓이도록
+
+  let res;
+  try {
+    res = await tbmIngestFiles(picked, {
+      onProgress: (done, total) => {
+        fill.style.width = Math.round(done / total * 100) + '%';
+        ptxt.textContent = done + ' / ' + total + '장 올리는 중';
+      }
+    });
+  } catch (e) {
+    toast('업로드 중 오류: ' + e.message);
+    busy = false; btn.disabled = false;
+    return;
+  }
+
+  ptxt.textContent = '저장하는 중...';
+  try {
+    const json = await safeLoad(API_BASE + '/api/load');
+    const server = Array.isArray(json.data && json.data.tbmRecords) ? json.data.tbmRecords : [];
+    fresh.forEach(r => {
+      const hit = server.filter(x => x.date === r.date)[0];
+      if (hit) {
+        hit.photos = (hit.photos || []).concat(r.photos || []);
+        hit.updatedAt = Date.now();
+      } else {
+        server.push(r);
+      }
+    });
+    const save = await fetch(API_BASE + '/api/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tbmRecords: server,
+        lastModified: new Date().toISOString(),
+        modifiedBy: currentUser.name
+      })
+    }).then(r => r.json());
+    if (!save.success) throw new Error(save.error || '저장 실패');
+    state.tbmRecords = server;
+  } catch (e) {
+    toast('저장 실패: ' + e.message + ' — 다시 시도해 주세요');
+    busy = false; btn.disabled = false; ptxt.textContent = '';
+    return;
+  }
+
+  showResult(res);
+  busy = false;
+  btn.disabled = false;
+}
+
+function showResult(res) {
+  const dates = Object.keys(res.byDate).sort();
+  let html = '<b>' + res.added + '장</b>을 <b>' + dates.length + '개 날짜</b>에 올렸습니다.<br><br>';
+  html += dates.map(d => '· ' + tbmKorDate(d) + ' — ' + res.byDate[d] + '장').join('<br>');
+  if (res.failed.length) {
+    html += '<br><br><span class="fail">' + res.failed.length + '장 실패: ' + res.failed[0].error + '</span>';
+  }
+  document.getElementById('result-body').innerHTML = html;
+  document.getElementById('preview').style.display = 'none';
+  document.getElementById('result').style.display = '';
+  toast(res.added + '장 올렸습니다');
+}
+
+function reset() {
+  picked = []; detected = [];
+  document.getElementById('files').value = '';
+  document.getElementById('preview').style.display = 'none';
+  document.getElementById('result').style.display = 'none';
+  document.getElementById('barfill').style.width = '0%';
+  document.getElementById('progtext').textContent = '';
+}
+</script>
+</body>
+</html>

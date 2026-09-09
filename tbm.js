@@ -128,6 +128,10 @@ function tbmBuildShell() {
         '<div class="tbm-drop-main">찍어둔 TBM 사진을 여기에 드래그하거나 클릭해서 고르세요</div>' +
         '<div class="tbm-drop-sub">촬영일을 읽어 날짜별로 자동 분류하고, 그날 출근자·작업내용까지 채워 초안을 만듭니다. 한 달치를 한 번에 던져도 됩니다.</div>' +
       '</div>' +
+      '<div class="tbm-phone">📱 폰에서 올리려면 <a href="tbm.html" target="_blank" rel="noopener">tbm.html</a> — 갤러리에서 여러 장 골라 올리면 여기에 날짜별로 들어옵니다. ' +
+        '<button class="tbm-btn tbm-btn-sm" onclick="tbmToggleQR()">QR 보기</button>' +
+        '<div id="tbm-qr" hidden></div>' +
+      '</div>' +
       '<div class="tbm-prog" id="tbm-prog" hidden><div class="tbm-prog-bar"><i id="tbm-prog-fill"></i></div><div class="tbm-prog-text" id="tbm-prog-text"></div></div>' +
       '<div class="tbm-main">' +
         '<aside class="tbm-side">' +
@@ -161,6 +165,19 @@ function tbmBuildShell() {
   const d = new Date(); d.setDate(1);
   if (rf) rf.value = tbmIso(d);
   if (rt) rt.value = tbmToday();
+}
+
+/** 폰에서 열 주소를 QR로 띄운다 (홈 화면에 추가해두고 쓰라는 의미) */
+function tbmToggleQR() {
+  const box = document.getElementById('tbm-qr');
+  if (!box) return;
+  if (!box.dataset.ready) {
+    const url = location.origin + location.pathname.replace(/[^/]*$/, '') + 'tbm.html';
+    box.innerHTML = '<img alt="TBM 사진 업로드 주소 QR" src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&margin=6&data=' +
+      encodeURIComponent(url) + '"><div class="tbm-qr-url">' + tbmEsc(url) + '</div>';
+    box.dataset.ready = '1';
+  }
+  box.hidden = !box.hidden;
 }
 
 /* ══════════════════════════════════════════
@@ -949,6 +966,11 @@ function tbmInjectStyle() {
 .tbm-drop-icon { font-size:26px; line-height:1; }
 .tbm-drop-main { font-weight:700; margin-top:6px; font-size:14px; }
 .tbm-drop-sub { font-size:12px; color:var(--tbm-mut); margin-top:4px; }
+
+.tbm-phone { font-size:12px; color:var(--tbm-mut); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.tbm-phone a { color:var(--tbm-accent); font-weight:700; }
+#tbm-qr { width:100%; text-align:center; padding:8px 0; }
+.tbm-qr-url { font-size:11px; color:var(--tbm-mut); margin-top:4px; }
 
 .tbm-prog { display:flex; align-items:center; gap:10px; }
 .tbm-prog-bar { flex:1; height:8px; background:#E7EDF2; border-radius:4px; overflow:hidden; }
