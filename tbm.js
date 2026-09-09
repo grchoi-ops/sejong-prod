@@ -781,7 +781,22 @@ function tbmPrintRange() {
   tbmCollect();
   const recs = tbmRecords().filter(r => r.date >= from && r.date <= to).sort((a, b) => a.date.localeCompare(b.date));
   if (!recs.length) { tbmMsg('해당 기간에 회의록이 없습니다.', 'error'); return; }
-  if (!confirm(recs.length + '건을 이어서 인쇄합니다. 계속할까요?')) return;
+
+  // 한 건 인쇄와 규칙을 맞춘다 — 뽑았으면 작성이 끝난 것으로 본다.
+  // 여러 건 상태가 한꺼번에 바뀌므로 확인창에서 미리 알려준다.
+  const drafts = tbmIsViewer() ? [] : recs.filter(r => r.status !== 'done');
+  const ask = [recs.length + '건을 이어서 인쇄합니다.'];
+  if (drafts.length) ask.push('미작성 ' + drafts.length + '건은 작성완료로 표시됩니다.');
+  ask.push('계속할까요?');
+  if (!confirm(ask.join('\n'))) return;
+
+  if (drafts.length) {
+    drafts.forEach(r => { r.status = 'done'; r.updatedAt = Date.now(); });
+    if (typeof saveState === 'function') saveState();
+    if (typeof saveFieldsToSheet === 'function') saveFieldsToSheet(['tbmRecords']);
+    tbmRenderList();
+    tbmRenderEditor();
+  }
   tbmPrintRecords(recs, 'TBM회의록_' + from + '_' + to);
 }
 
