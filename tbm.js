@@ -877,6 +877,17 @@ function tbmPrintRecords(recs, title) {
   tbmMsg(recs.length + '건 인쇄', 'success');
 }
 
+/**
+ * 작성자 서명. tbm-sign-{이름}.png 가 있으면 그 도장을, 없으면 이름 글자를 찍는다.
+ * 파일 존재 여부를 미리 알 수 없으므로 onerror로 떨어뜨린다 — 새 작성자가 생기면
+ * 코드를 고칠 필요 없이 같은 규칙으로 png만 추가하면 된다.
+ */
+function tbmSignHTML(name) {
+  if (!name) return '';
+  const src = 'tbm-sign-' + encodeURIComponent(name) + '.png';
+  return '<img src="' + tbmEsc(src) + '" alt="' + tbmEsc(name) + '" onerror="this.replaceWith(this.alt)">';
+}
+
 function tbmPrintDoc(rec) {
   const e = tbmEsc;
   const hazards = (rec.hazards || []).length ? rec.hazards : [{ no: 1, risk: '', measure: '' }, { no: 2, risk: '', measure: '' }, { no: 3, risk: '', measure: '' }];
@@ -915,7 +926,7 @@ function tbmPrintDoc(rec) {
     '<div class="tp-head">' +
       '<div class="tp-title"><span>TOOL BOX MEETING</span>TBM 회의록</div>' +
       '<div class="tp-appr">' +
-        '<div class="tp-appr-cell"><div class="l">작 성</div><div class="s">' + e(rec.createdBy || (rec.leader && rec.leader.name) || '') + '</div></div>' +
+        '<div class="tp-appr-cell"><div class="l">작 성</div><div class="s">' + tbmSignHTML(rec.createdBy || (rec.leader && rec.leader.name) || '') + '</div></div>' +
         '<div class="tp-appr-cell"><div class="l">승 인</div><div class="s"><img src="tbm-sign-approver.png" alt=""></div></div>' +
       '</div>' +
     '</div>' +
