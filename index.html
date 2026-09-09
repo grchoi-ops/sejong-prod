@@ -47,6 +47,7 @@
     <button class="tab-btn" data-tab="overtime">⑨ 특근보고서</button>
     <button class="tab-btn" data-tab="jangbi">⑩ 장비관리</button>
     <button class="tab-btn" data-tab="dailyreport">⑪ 일일보고서</button>
+    <button class="tab-btn" data-tab="tbm">⑫ TBM</button>
   </nav>
 </header>
 
@@ -746,6 +747,13 @@
   <div id="dr-root"></div>
 </section>
 
+<!-- ══════════════════════════════════════════
+     탭⑫: TBM 회의록
+══════════════════════════════════════════ -->
+<section id="tab-tbm" class="tab-panel">
+  <div id="tbm-root"></div>
+</section>
+
 <!-- M/D 로그인 오버레이 -->
 <div id="md-login-overlay"
   style="display:none;position:fixed;inset:0;background:rgba(15,17,23,0.96);align-items:center;justify-content:center;z-index:5000;">
@@ -1198,5 +1206,7 @@ table{border-collapse:collapse;width:100%;}
 <img id="jb-logo-src" src="ci_logo6.png" style="display:none;" />
 <script src="jangbi.js"></script>
 <script src="dailyreport.js"></script>
+<script src="tbm-shared.js"></script>
+<script src="tbm.js"></script>
 </body>
 </html>
