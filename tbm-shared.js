@@ -315,7 +315,7 @@ function tbmAutoParticipants(date) {
     .map(e => e.name);
 }
 
-/** ⑪일일보고서의 '금일 업무 진행 상황'에서 작업명·작업내용을 끌어온다 */
+/** ⑪일일보고서의 '금일 업무 진행 상황'에서 작업명·작업예정을 끌어온다 */
 function tbmAutoWork(date) {
   const rep = (state.dailyReports || {})[date];
   const rows = (rep && Array.isArray(rep.today) ? rep.today : []).filter(r => r && (r.proj || r.work));
