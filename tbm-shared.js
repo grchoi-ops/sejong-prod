@@ -217,16 +217,33 @@ const TBM_PRESETS = [
 ];
 
 /* ── 초안 기본 선택 ──
-   매일 반복되는 일반적 위험요인만 미리 골라둔다. 계절과 안 맞는 항목
-   (여름의 결빙, 겨울의 폭염)이 찍히면 문서 신뢰도가 떨어지므로
-   기상·환경 항목만 달에 따라 바꾼다. 나머지는 연중 공통이다. */
-const TBM_DEFAULT_LABELS = ['용접 화재', '중량물 낙하', '요통·근골격계', '감전'];
+   위험요인 3건을 미리 골라둔다. 매일 같은 3건이 박혀 있으면 형식적인
+   문서가 되므로 날짜마다 다르게 뽑되, 계절과 안 맞는 항목(여름의 결빙,
+   겨울의 폭염)은 절대 안 나오게 한다.
 
+   '랜덤'이지만 날짜를 씨앗으로 쓴다. 같은 날짜는 몇 번을 다시 만들어도
+   같은 3건이 나와야 한다 — 화면에서 본 것과 인쇄물이 달라지거나,
+   자동 채움을 누를 때마다 내용이 바뀌면 문서를 믿을 수 없다. */
+
+/* 제관·용접·가공 작업에 연중 해당되는 항목만 추린 풀.
+   밀폐공간·화학물질처럼 특수 작업에서만 나오는 항목은 뺐다 —
+   필요하면 프리셋 태그를 눌러 직접 넣는다. */
+const TBM_GENERAL_LABELS = [
+  '고소작업 추락', '사다리 전도', '자재 낙하',
+  '회전체 협착', '중장비 협착', '운반 중 충돌',
+  '감전', '용접 화재',
+  '중량물 낙하', '요통·근골격계', '분진 흡입',
+  '강풍'
+];
+
+const TBM_HAZARD_COUNT = 3;
+
+/** 그 계절에만 반드시 끼워 넣는 항목. 봄·가을은 없다(강풍은 일반 풀에 있다). */
 function tbmSeasonLabel(date) {
   const m = Number(String(date).split('-')[1]);
   if (m >= 6 && m <= 8) return '폭염·열사병';
   if (m === 12 || m <= 2) return '결빙·미끄러짐';
-  return '강풍';
+  return null;
 }
 
 function tbmPresetByLabel(label) {
@@ -236,9 +253,26 @@ function tbmPresetByLabel(label) {
   return null;
 }
 
-/** 그날 초안에 미리 넣을 위험요인 목록 */
+/** 날짜 문자열 하나로 결정되는 난수 — 같은 날짜면 항상 같은 순서가 나온다 */
+function tbmSeededPick(list, n, seedStr) {
+  let seed = 0;
+  for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
+  const pool = list.slice();
+  const out = [];
+  while (out.length < n && pool.length) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;      // 선형 합동법
+    out.push(pool.splice(seed % pool.length, 1)[0]);
+  }
+  return out;
+}
+
+/** 그날 초안에 미리 넣을 위험요인 (계절 고정분 + 나머지는 날짜별 랜덤) */
 function tbmDefaultPresets(date) {
-  return TBM_DEFAULT_LABELS.concat([tbmSeasonLabel(date)])
+  const season = tbmSeasonLabel(date);
+  const labels = season ? [season] : [];
+  const rest = TBM_GENERAL_LABELS.filter(l => labels.indexOf(l) === -1);
+  return labels
+    .concat(tbmSeededPick(rest, TBM_HAZARD_COUNT - labels.length, String(date)))
     .map(tbmPresetByLabel)
     .filter(Boolean);
 }

@@ -640,7 +640,8 @@ function tbmAutoFill() {
   if (!(rec.hazards || []).length) {
     rec.hazards = tbmDefaultHazards(rec.date);
     if (!(rec.safetyChecks || []).length) rec.safetyChecks = tbmDefaultSafetyChecks(rec.date);
-    filled.push('위험요인 ' + rec.hazards.length + '건(' + tbmSeasonLabel(rec.date) + ' 포함)');
+    const season = tbmSeasonLabel(rec.date);   // 봄·가을은 고정 항목이 없어 null
+    filled.push('위험요인 ' + rec.hazards.length + '건' + (season ? '(' + season + ' 포함)' : ''));
   } else {
     kept.push('위험요인은 이미 작성돼 있어 그대로 둠');
   }
