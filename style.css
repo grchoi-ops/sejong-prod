@@ -187,6 +187,9 @@ select option { background: var(--surface2); }
   display: flex;
   align-items: center;
   gap: 6px;
+  /* 장기출장 기간(시작일~복귀일) 입력이 추가되면 폭이 넘칠 수 있어 줄바꿈 허용 */
+  flex-wrap: wrap;
+  row-gap: 5px;
 }
 .emp-num {
   font-family: var(--mono);
