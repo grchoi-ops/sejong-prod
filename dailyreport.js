@@ -213,6 +213,11 @@ function drBuildShell() {
     });
   });
 
+  // 마지막 글자를 치고 곧장 다른 창으로 가거나 브라우저를 닫으면 700ms를 못 채운다.
+  // 화면이 가려지는 시점에 남은 저장을 확정해 둔다 (로컬까지만 — 서버는 저장 버튼 몫).
+  document.addEventListener('visibilitychange', () => { if (document.hidden) drFlushPending(); });
+  window.addEventListener('pagehide', drFlushPending);
+
   document.getElementById('dr-date').addEventListener('change', e => drLoad(e.target.value));
   document.getElementById('dr-prev').addEventListener('click', () => drLoad(drShift(_drDate, -1)));
   document.getElementById('dr-next').addEventListener('click', () => drLoad(drShift(_drDate, 1)));
@@ -391,7 +396,9 @@ function drApplyRecord(rec) {
 }
 
 function drLoad(date, opts) {
-  clearTimeout(_drSaveTimer);
+  // 삭제 직후 호출될 때만 버린다 — 그때는 화면에 남은 내용을 다시 쓰면 삭제가 되살아난다
+  if (opts && opts.discard) drDiscardPending();
+  else drFlushPending();
   _drDate = date;
   document.getElementById('dr-date').value = date;
   document.getElementById('dr-dow').textContent = DAYS_KO[drParse(date).getDay()] + '요일';
@@ -451,7 +458,25 @@ function drScheduleSave() {
   drRecalcFit();
 }
 
+/**
+ * 예약된(디바운스 대기 중인) 저장을 지금 확정한다.
+ * 취소만 하고 넘어가면 방금 입력한 내용이 state.dailyReports에 들어가지 못한 채
+ * 사라진다 — 화면을 갈아끼우는 순간 되살릴 방법이 없다.
+ */
+function drFlushPending() {
+  if (!_drSaveTimer) return;
+  clearTimeout(_drSaveTimer);
+  _drSaveTimer = null;
+  if (_drDate) drSaveNow();
+}
+
+function drDiscardPending() {
+  clearTimeout(_drSaveTimer);
+  _drSaveTimer = null;
+}
+
 function drSaveNow() {
+  _drSaveTimer = null;
   if (drIsViewer()) return;
   const rec = drCollect();
   const hasAny = DR_SECTIONS.some(s => rec[s].length);
@@ -639,7 +664,7 @@ async function drDeleteRecord(date) {
   delete state.dailyReports[date];
   saveState();
   drRenderHistoryList();
-  if (date === _drDate) drLoad(date, { noCarry: true });
+  if (date === _drDate) drLoad(date, { noCarry: true, discard: true });
   try {
     await drPushToServer();
     showToast(`${date} 보고서를 삭제했습니다`, 'success');
@@ -660,7 +685,7 @@ async function drBulkDeletePrompt() {
   targets.forEach(d => delete state.dailyReports[d]);
   saveState();
   drRenderHistoryList();
-  if (targets.includes(_drDate)) drLoad(_drDate, { noCarry: true });
+  if (targets.includes(_drDate)) drLoad(_drDate, { noCarry: true, discard: true });
   try {
     await drPushToServer();
     showToast(`${targets.length}개 보고서를 삭제했습니다`, 'success');
