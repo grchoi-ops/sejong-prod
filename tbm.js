@@ -98,6 +98,7 @@ function tbmBuildShell() {
         '<button class="tbm-btn tbm-btn-sm" onclick="tbmToggleQR()">QR 보기</button>' +
       '</div>' +
       '<div id="tbm-qr" hidden></div>' +
+      '<details class="tbm-cal-wrap" id="tbm-cal-wrap" open><summary>📅 진행 현황 달력</summary><div id="tbm-cal"></div></details>' +
       '<div class="tbm-prog" id="tbm-prog" hidden><div class="tbm-prog-bar"><i id="tbm-prog-fill"></i></div><div class="tbm-prog-text" id="tbm-prog-text"></div></div>' +
       '<div class="tbm-main">' +
         '<aside class="tbm-side">' +
@@ -123,6 +124,14 @@ function tbmBuildShell() {
   // 편집 영역은 레코드를 열 때마다 다시 그려지므로 감시는 여기서 한 번만 건다
   const ed = document.getElementById('tbm-editor');
   if (ed) ed.addEventListener('input', () => { if (!tbmIsViewer()) tbmScheduleLocalSave(); });
+
+  const calWrap = document.getElementById('tbm-cal-wrap');
+  if (calWrap) {
+    try { if (localStorage.getItem('tbm_cal_open') === '0') calWrap.open = false; } catch (e) {}
+    calWrap.addEventListener('toggle', () => {
+      try { localStorage.setItem('tbm_cal_open', calWrap.open ? '1' : '0'); } catch (e) {}
+    });
+  }
 
   const nd = document.getElementById('tbm-newdate');
   if (nd) nd.value = tbmToday();
@@ -220,7 +229,117 @@ async function tbmIngest(files, targetDate) {
    ══════════════════════════════════════════ */
 function tbmToggleOnlyDraft(v) { _tbmOnlyDraft = !!v; tbmRenderList(); }
 
+/* ══════════════════════════════════════════
+   달력 — 어디까지 됐고 어디가 비었는지 한눈에
+   ══════════════════════════════════════════ */
+
+/* 상태는 사진 → 작성 → 인쇄 순서를 그대로 따라간다.
+   '빠짐'은 그날 일한 사람이 있는데 사진조차 없는 날이다. */
+const TBM_CAL_STATUS = {
+  done:    { label: '작성완료',  cls: 'done' },
+  draft:   { label: '미작성',    cls: 'draft' },
+  nophoto: { label: '사진 없음', cls: 'nophoto' },
+  off:     { label: '해당 없음', cls: 'off' }
+};
+
+let _tbmCalMonth = null;   // 'YYYY-MM'
+
+/** 그날 출근한 인원 수 — 이게 0이면 TBM이 필요 없는 날로 본다 (주말·공휴일·전사 휴무) */
+function tbmWorkerCount(date) {
+  const day = (state.dailyData || {})[date];
+  if (!day || !day.emp) return 0;
+  let n = 0;
+  for (const id in day.emp) if (day.emp[id] && day.emp[id].status === '출근') n++;
+  return n;
+}
+
+function tbmDayStatus(date) {
+  const rec = tbmFindByDate(date);
+  const photos = rec ? (rec.photos || []).length : 0;
+  const workers = tbmWorkerCount(date);
+  let key;
+  if (rec && rec.status === 'done') key = 'done';
+  else if (photos > 0)              key = 'draft';
+  else if (workers > 0)             key = 'nophoto';   // 일한 날인데 사진조차 없다
+  else                              key = 'off';
+  return { key: key, rec: rec, photos: photos, workers: workers };
+}
+
+function tbmCalShift(n) {
+  const parts = (_tbmCalMonth || tbmToday().slice(0, 7)).split('-').map(Number);
+  const d = new Date(parts[0], parts[1] - 1 + n, 1);
+  _tbmCalMonth = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  tbmRenderCal();
+}
+
+/** 달력에서 날짜를 누르면 그 회의록을 연다. 없으면 만들어서 연다. */
+function tbmCalPick(date) {
+  if (tbmFindByDate(date)) { tbmOpen(date); return; }
+  if (tbmIsViewer()) { tbmMsg('열람용 계정은 새로 만들 수 없습니다.', 'error'); return; }
+  // 출근 기록이 없는 날은 잘못 누른 경우가 대부분이라 한 번 묻는다
+  if (!tbmWorkerCount(date) && !confirm(tbmKorDate(date) + '은 출근 기록이 없는 날입니다.\n그래도 회의록을 만들까요?')) return;
+  tbmCollect();
+  tbmFindOrCreateDraft(date);
+  if (typeof saveState === 'function') saveState();
+  tbmOpen(date);
+  tbmMsg(tbmKorDate(date) + ' 회의록을 만들었습니다', 'success');
+}
+
+function tbmRenderCal() {
+  const box = document.getElementById('tbm-cal');
+  if (!box) return;
+  if (!_tbmCalMonth) _tbmCalMonth = (_tbmDate || tbmToday()).slice(0, 7);
+
+  const [y, m] = _tbmCalMonth.split('-').map(Number);
+  const first = new Date(y, m - 1, 1);
+  const days = new Date(y, m, 0).getDate();
+  const today = tbmToday();
+  const count = { done: 0, draft: 0, nophoto: 0, off: 0 };
+
+  const cells = [];
+  for (let i = 0; i < first.getDay(); i++) cells.push('<div class="tbm-cal-cell tbm-cal-pad"></div>');
+
+  for (let d = 1; d <= days; d++) {
+    const date = _tbmCalMonth + '-' + String(d).padStart(2, '0');
+    const st = tbmDayStatus(date);
+    count[st.key]++;
+    const dow = new Date(y, m - 1, d).getDay();
+    const holiday = (typeof isHoliday === 'function' && isHoliday(date)) || dow === 0 || dow === 6;
+
+    const tip = tbmKorDate(date) + ' — ' + TBM_CAL_STATUS[st.key].label +
+      (st.photos ? ' · 사진 ' + st.photos + '장' : '') +
+      (st.workers ? ' · 출근 ' + st.workers + '명' : ' · 출근 기록 없음');
+
+    cells.push(
+      '<button class="tbm-cal-cell ' + TBM_CAL_STATUS[st.key].cls +
+        (date === _tbmDate ? ' sel' : '') + (date === today ? ' today' : '') +
+        (holiday ? ' holi' : '') + '"' +
+        ' onclick="tbmCalPick(\'' + date + '\')" title="' + tbmEsc(tip) + '">' +
+        '<span class="tbm-cal-d">' + d + '</span>' +
+        (st.photos ? '<span class="tbm-cal-n">' + st.photos + '</span>' : '') +
+      '</button>');
+  }
+
+  box.innerHTML =
+    '<div class="tbm-cal-head">' +
+      '<button class="tbm-btn tbm-btn-sm" onclick="tbmCalShift(-1)">‹</button>' +
+      '<span class="tbm-cal-title">' + y + '년 ' + m + '월</span>' +
+      '<button class="tbm-btn tbm-btn-sm" onclick="tbmCalShift(1)">›</button>' +
+      '<span class="tbm-cal-sum">' +
+        '<span class="tbm-cal-key done"></span>완료 ' + count.done +
+        '<span class="tbm-cal-key draft"></span>미작성 ' + count.draft +
+        '<span class="tbm-cal-key nophoto"></span>사진 없음 ' + count.nophoto +
+      '</span>' +
+    '</div>' +
+    '<div class="tbm-cal-grid">' +
+      TBM_DAYS.map((n, i) => '<div class="tbm-cal-dow' + (i === 0 ? ' sun' : (i === 6 ? ' sat' : '')) + '">' + n + '</div>').join('') +
+      cells.join('') +
+    '</div>' +
+    (count.nophoto ? '<div class="tbm-cal-warn">⚠ 일한 기록은 있는데 사진이 없는 날 ' + count.nophoto + '일 — 빨간 칸을 눌러 확인하세요.</div>' : '');
+}
+
 function tbmRenderList() {
+  tbmRenderCal();          // 기록이 바뀌는 모든 경로가 이 함수를 거친다
   const box = document.getElementById('tbm-list');
   if (!box) return;
   const all = tbmRecords().slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
@@ -281,6 +400,7 @@ function tbmOpen(date) {
   // 다른 날짜로 넘어가기 전에 현재 편집 내용을 확정
   if (_tbmDate && _tbmDate !== date) { clearTimeout(_tbmSaveTimer); tbmCollect(); if (typeof saveState === 'function') saveState(); }
   _tbmDate = date || null;
+  if (_tbmDate) _tbmCalMonth = _tbmDate.slice(0, 7);   // 달력이 열린 날짜를 따라간다
   tbmRenderList();
   tbmRenderEditor();
 }
@@ -1013,6 +1133,46 @@ function tbmInjectStyle() {
 #tbm-qr img { background:#fff; padding:6px; border-radius:4px; display:block; }
 .tbm-qr-url { font-size:11px; color:var(--tbm-mut); word-break:break-all; max-width:220px; text-align:center; }
 
+.tbm-cal-wrap { border:1px solid var(--tbm-line); border-radius:var(--radius); background:var(--surface); overflow:hidden; }
+.tbm-cal-wrap > summary { cursor:pointer; padding:7px 12px; font-size:12.5px; font-weight:700; color:var(--tbm-ink); background:var(--surface2); }
+#tbm-cal { padding:10px 12px 12px; }
+.tbm-cal-head { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+.tbm-cal-title { font-size:13px; font-weight:800; color:var(--tbm-ink); min-width:86px; text-align:center; }
+.tbm-cal-sum { margin-left:auto; font-size:11px; color:var(--tbm-mut); display:flex; align-items:center; gap:4px; }
+.tbm-cal-key { width:9px; height:9px; border-radius:2px; display:inline-block; margin-left:8px; }
+.tbm-cal-key.done { background:var(--green); }
+.tbm-cal-key.draft { background:var(--accent4); }
+.tbm-cal-key.nophoto { background:var(--red); }
+
+.tbm-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; max-width:560px; }
+.tbm-cal-dow { text-align:center; font-size:10px; font-weight:700; color:var(--tbm-mut); padding:2px 0 4px; }
+.tbm-cal-dow.sun { color:var(--red); }
+.tbm-cal-dow.sat { color:var(--tbm-accent); }
+
+.tbm-cal-cell { position:relative; aspect-ratio:1.35; min-height:34px; border:1px solid var(--tbm-line); border-radius:5px;
+  background:var(--surface2); color:var(--tbm-ink); font-family:inherit; cursor:pointer; padding:0;
+  display:flex; align-items:center; justify-content:center; }
+.tbm-cal-cell:hover { border-color:var(--tbm-accent); }
+.tbm-cal-pad { border:none; background:none; cursor:default; }
+.tbm-cal-d { font-size:12px; font-weight:700; }
+/* 사진 장수 — 칸이 작아 숫자만 구석에 붙인다 */
+.tbm-cal-n { position:absolute; right:3px; bottom:2px; font-size:9px; font-weight:700; opacity:.75; }
+
+.tbm-cal-cell.holi .tbm-cal-d { color:var(--tbm-mut); }
+.tbm-cal-cell.off { background:var(--surface); }
+.tbm-cal-cell.off .tbm-cal-d { color:var(--text3); }
+.tbm-cal-cell.done    { background:rgba(46,213,115,.20);  border-color:rgba(46,213,115,.45); }
+.tbm-cal-cell.draft   { background:rgba(255,179,71,.20);  border-color:rgba(255,179,71,.45); }
+.tbm-cal-cell.nophoto { background:rgba(255,71,87,.20);   border-color:rgba(255,71,87,.50); }
+.tbm-cal-cell.done .tbm-cal-d    { color:var(--green); }
+.tbm-cal-cell.draft .tbm-cal-d   { color:var(--accent4); }
+.tbm-cal-cell.nophoto .tbm-cal-d { color:var(--red); }
+.tbm-cal-cell.today { box-shadow:inset 0 0 0 2px var(--tbm-accent); }
+.tbm-cal-cell.sel   { outline:2px solid var(--tbm-accent); outline-offset:1px; }
+
+.tbm-cal-warn { margin-top:8px; font-size:11.5px; color:var(--red); background:rgba(255,71,87,.10);
+  border:1px solid rgba(255,71,87,.30); border-radius:6px; padding:6px 9px; }
+
 .tbm-prog { display:flex; align-items:center; gap:10px; }
 .tbm-prog-bar { flex:1; height:8px; background:var(--surface3); border-radius:4px; overflow:hidden; }
 .tbm-prog-bar i { display:block; height:100%; width:0; background:var(--tbm-accent); transition:width .15s; }
@@ -1130,6 +1290,7 @@ function tbmInjectStyle() {
   .tbm-main { flex-direction:column; }
   .tbm-side { width:100%; }
   .tbm-grid2, .tbm-grid3 { grid-template-columns:1fr; }
+  .tbm-cal-sum { margin-left:0; width:100%; }
 }
 `;
   const style = document.createElement('style');
