@@ -348,6 +348,14 @@ function migrateStateFields() {
   // [단계2] 직원 신규 필드 기본값 주입
   state.employees.forEach(e => {
     if (e.longTermTrip === undefined) e.longTermTrip = false;
+    if (e.tripLocation === undefined) e.tripLocation = '';
+    // [장기출장 이력] 기존 on/off 플래그를 기간 배열로 변환.
+    // 체크돼 있던 직원은 '시작일·복귀일 미정'인 출장 1건으로 옮겨져 기존 동작을 그대로 유지한다.
+    if (!Array.isArray(e.tripPeriods)) {
+      e.tripPeriods = e.longTermTrip
+        ? [{ start: e.tripStart || '', end: e.tripEnd || '', loc: e.tripLocation || '' }]
+        : [];
+    }
     if (e.position     === undefined) e.position     = '';
     if (e.phone        === undefined) e.phone        = '';
     if (e.pin          === undefined) e.pin          = '0000';
@@ -695,17 +703,111 @@ function renderEmployees() {
           '<option value="' + r + '"' + (emp.mdRole === r ? ' selected' : '') + '>' + r + '</option>'
         ).join('') +
       '</select>' +
-      // 장기출장 체크박스 + 고정 출장지
-      '<label style="font-size:10px;color:var(--accent4);display:flex;align-items:center;gap:2px;cursor:pointer;white-space:nowrap;flex-shrink:0;" title="체크 시 일일 입력·집계에서 제외">' +
-        '<input type="checkbox"' + (emp.longTermTrip?' checked':'') + ' style="accent-color:var(--accent4);width:12px;height:12px;" onchange="updateEmpField(' + emp.id + ',\'longTermTrip\',this.checked)">' +
-        '✈장기출장' +
-      '</label>' +
-      '<input type="text" placeholder="출장지" value="' + (emp.tripLocation||'') + '" style="font-size:10px;width:72px;padding:1px 4px;border:1px solid rgba(255,179,71,0.4);border-radius:4px;background:rgba(255,179,71,0.08);color:var(--accent4);flex-shrink:0;" onchange="updateEmpField(' + emp.id + ',\'tripLocation\',this.value)">' +
-      // 입사일: 이전 날짜는 자동 휴무 처리
-      '<input type="date" value="' + (emp.hireDate||'') + '" title="입사일 — 이전 날짜는 자동 휴무 처리" style="font-size:10px;padding:1px 4px;flex-shrink:0;" onchange="updateEmpField(' + emp.id + ',\'hireDate\',this.value)">' +
-      '<button class="btn btn-danger btn-sm" style="padding:2px 5px;font-size:10px;flex-shrink:0;" onclick="removeEmployee(' + emp.id + ')">✕</button>';
+      '<button class="btn btn-danger btn-sm" style="padding:2px 5px;font-size:10px;flex-shrink:0;margin-left:auto;" onclick="removeEmployee(' + emp.id + ')">✕</button>' +
+      // 둘째 줄: 입사일 + 장기출장 이력 요약 칩 (이력 상세는 기본 접힘)
+      '<div class="emp-card-dates">' +
+        // 입사일: 이전 날짜는 자동 휴무 처리
+        '<span class="emp-date-field">' +
+          '<span class="emp-date-label">입사일</span>' +
+          '<input type="date" value="' + (emp.hireDate||'') + '" title="입사일 — 이 날짜 이전은 자동 휴무 처리되어 목록·집계에서 빠집니다" onchange="updateEmpField(' + emp.id + ',\'hireDate\',this.value)">' +
+        '</span>' +
+        renderTripChip(emp) +
+      '</div>' +
+      renderTripHistory(emp);
     grid.appendChild(card);
   });
+}
+
+// ── 장기출장 이력 UI ──────────────────────────────
+// 펼쳐 놓은 직원 id (재렌더해도 펼침 상태 유지). 화면 상태일 뿐 저장하지 않는다.
+const expandedTripEmps = new Set();
+
+/**
+ * [장기출장] 둘째 줄의 출장 요약 칩.
+ * 이력이 없으면 '출장 추가' 버튼만, 있으면 현재 상태 + 건수를 보여준다.
+ */
+function renderTripChip(emp) {
+  const periods = emp.tripPeriods || [];
+  if (periods.length === 0) {
+    return '<button class="trip-chip is-add" onclick="addTripPeriod(' + emp.id + ')" title="장기출장 기간을 등록합니다">+ ✈ 출장 추가</button>';
+  }
+  const cur = findLongTrip(emp, todayStr());
+  const open = expandedTripEmps.has(emp.id);
+  const label = cur
+    ? '✈ 출장중' + (cur.loc ? ' · ' + cur.loc : '')
+    : '✈ 출장 ' + periods.length + '건';
+  return '<button class="trip-chip' + (cur ? ' is-active' : '') + '" onclick="toggleTripHistory(' + emp.id + ')"' +
+    ' title="클릭하면 출장 이력을 펼치거나 접습니다">' + label + ' <span class="trip-chip-caret">' + (open ? '▾' : '▸') + '</span></button>';
+}
+
+/**
+ * [장기출장] 셋째 줄 — 출장 기간 목록. 칩을 눌렀을 때만 펼쳐진다.
+ * 복귀일을 비워두면 복귀 미정(무기한 출장)으로 처리된다.
+ */
+function renderTripHistory(emp) {
+  const periods = emp.tripPeriods || [];
+  if (periods.length === 0 || !expandedTripEmps.has(emp.id)) return '';
+  const today = todayStr();
+  // 최근 출장이 위로 오도록 시작일 내림차순 표시 (원본 인덱스는 보존)
+  const rows = periods
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => String(b.p.start || '').localeCompare(String(a.p.start || '')))
+    .map(({ p, i }) => {
+      const isNow = (!p.start || today >= p.start) && (!p.end || today <= p.end);
+      return '<div class="trip-row' + (isNow ? ' is-now' : '') + '">' +
+        '<input type="date" value="' + (p.start||'') + '" title="출장 시작일 — 비워두면 시작일 제한 없음" onchange="updateTripPeriod(' + emp.id + ',' + i + ',\'start\',this.value)">' +
+        '<span class="trip-row-tilde">~</span>' +
+        '<input type="date" value="' + (p.end||'') + '" title="복귀일 — 이 날짜까지만 집계에서 제외됩니다. 비워두면 복귀 미정" onchange="updateTripPeriod(' + emp.id + ',' + i + ',\'end\',this.value)">' +
+        '<input type="text" class="trip-row-loc" placeholder="출장지" value="' + String(p.loc||'').replace(/"/g,'&quot;') + '" onchange="updateTripPeriod(' + emp.id + ',' + i + ',\'loc\',this.value)">' +
+        (p.end ? '' : '<span class="trip-row-tag">복귀 미정</span>') +
+        '<button class="trip-row-del" onclick="removeTripPeriod(' + emp.id + ',' + i + ')" title="이 출장 기록 삭제">✕</button>' +
+      '</div>';
+    }).join('');
+  return '<div class="trip-history">' + rows +
+    '<button class="trip-chip is-add" onclick="addTripPeriod(' + emp.id + ')">+ 출장 추가</button>' +
+    '</div>';
+}
+
+function toggleTripHistory(id) {
+  if (expandedTripEmps.has(id)) expandedTripEmps.delete(id);
+  else expandedTripEmps.add(id);
+  renderEmployees();
+}
+
+/** [장기출장] 새 출장 기간 추가 — 시작일은 오늘로 두고 복귀일은 미정 상태로 시작 */
+function addTripPeriod(id) {
+  const emp = state.employees.find(e => e.id === id);
+  if (!emp) return;
+  if (!Array.isArray(emp.tripPeriods)) emp.tripPeriods = [];
+  emp.tripPeriods.push({ start: todayStr(), end: '', loc: '' });
+  expandedTripEmps.add(id);
+  syncLegacyTripFields(emp);
+  saveState();
+  renderEmployees();
+  loadDailyData();
+}
+
+function removeTripPeriod(id, idx) {
+  const emp = state.employees.find(e => e.id === id);
+  if (!emp || !Array.isArray(emp.tripPeriods) || !emp.tripPeriods[idx]) return;
+  const p = emp.tripPeriods[idx];
+  const label = (p.start || '시작일 미정') + ' ~ ' + (p.end || '복귀 미정') + (p.loc ? ' (' + p.loc + ')' : '');
+  if (!confirm(emp.name + '의 출장 기록을 삭제하시겠습니까?\n\n' + label + '\n\n삭제하면 이 기간도 정상 인원으로 집계됩니다.')) return;
+  emp.tripPeriods.splice(idx, 1);
+  syncLegacyTripFields(emp);
+  saveState();
+  renderEmployees();
+  loadDailyData();
+}
+
+function updateTripPeriod(id, idx, field, val) {
+  const emp = state.employees.find(e => e.id === id);
+  if (!emp || !Array.isArray(emp.tripPeriods) || !emp.tripPeriods[idx]) return;
+  emp.tripPeriods[idx][field] = val;
+  syncLegacyTripFields(emp);
+  saveState();
+  renderEmployees();
+  loadDailyData();
 }
 
 function addEmployee() {
@@ -717,7 +819,8 @@ function addEmployee() {
   const maxId = state.employees.reduce((m, e) => Math.max(m, e.id), 0);
   state.employees.push({
     id: maxId + 1, name, div, mdRole, hireDate,
-    home: '', longTermTrip: false, position: '', phone: '',
+    home: '', longTermTrip: false, tripLocation: '', tripPeriods: [],
+    position: '', phone: '',
     pin: '0000', pinChanged: false
   });
   saveState();
@@ -747,7 +850,8 @@ function updateEmpHome(id, home) {
 }
 
 /**
- * [단계15] 직원 단일 필드 업데이트 (position, phone, longTermTrip 등)
+ * [단계15] 직원 단일 필드 업데이트 (position, phone, hireDate 등)
+ * 장기출장 기간은 배열이라 updateTripPeriod로 따로 처리한다.
  * @param {number} id
  * @param {string} field
  * @param {*} val
@@ -755,15 +859,10 @@ function updateEmpHome(id, home) {
 function updateEmpField(id, field, val) {
   const emp = state.employees.find(e => e.id === id);
   if (!emp) return;
-  // [EVAL_HINT 수정] boolean 필드는 typeof 방어 처리
-  if (field === 'longTermTrip') {
-    emp[field] = (val === true || val === 'true');
-  } else {
-    emp[field] = val;
-  }
+  emp[field] = val;
   saveState();
-  // longTermTrip·hireDate 변경 시 일일 입력 그리드 즉시 갱신
-  if (field === 'longTermTrip' || field === 'hireDate') loadDailyData();
+  // 입사일 변경 시 일일 입력 그리드 즉시 갱신
+  if (field === 'hireDate') loadDailyData();
 }
 
 // ══════════════════════════════════════════
@@ -933,6 +1032,50 @@ function isPreHire(emp, dateStr) {
 }
 
 /**
+ * [장기출장] 해당 날짜를 포함하는 출장 기간을 찾아 반환 (없으면 null)
+ *
+ * 출장은 한 번으로 끝나지 않으므로 기간을 emp.tripPeriods 배열에 이력으로 쌓는다.
+ * 덮어쓰지 않고 건별로 남기기 때문에, 몇 번을 다녀와도 지난 출장 기간의
+ * 과거 기록이 소급해서 바뀌지 않는다.
+ *   emp.tripPeriods = [{ start:'YYYY-MM-DD', end:'YYYY-MM-DD', loc:'출장지' }, ...]
+ *  - start 미입력 → 시작일 제한 없음 (그 이전 날짜도 전부 출장으로 취급)
+ *  - end   미입력 → 복귀 미정 (무기한 출장)
+ *  - dateStr 미지정 → 오늘 기준으로 판단
+ * @param {object} emp
+ * @param {string} [dateStr] - 'YYYY-MM-DD'
+ * @returns {object|null} 해당 날짜가 속한 출장 기간 (출장지 표시에 사용)
+ */
+function findLongTrip(emp, dateStr) {
+  if (!emp || !Array.isArray(emp.tripPeriods) || emp.tripPeriods.length === 0) return null;
+  const d = dateStr || todayStr();
+  return emp.tripPeriods.find(p =>
+    p && (!p.start || d >= p.start) && (!p.end || d <= p.end)
+  ) || null;
+}
+
+/**
+ * [장기출장] 해당 날짜에 이 직원이 장기출장 중인지 판별
+ * @param {object} emp
+ * @param {string} [dateStr] - 'YYYY-MM-DD'
+ * @returns {boolean}
+ */
+function isOnLongTrip(emp, dateStr) {
+  return findLongTrip(emp, dateStr) !== null;
+}
+
+/**
+ * [장기출장] 구버전 호환용 필드(longTermTrip·tripLocation)를 오늘 기준으로 동기화.
+ * 이 브라우저만 새 버전이고 다른 PC가 캐시된 옛 app.js를 쓰더라도
+ * '지금 출장 중인지'는 맞게 보이도록 남겨둔다. 판정은 tripPeriods만 사용한다.
+ */
+function syncLegacyTripFields(emp) {
+  if (!emp) return;
+  const cur = findLongTrip(emp, todayStr());
+  emp.longTermTrip = !!cur;
+  emp.tripLocation = cur ? (cur.loc || '') : '';
+}
+
+/**
  * [입사일] 저장된 기록이 없을 때 사용할 기본 일일 데이터.
  * 입사 전 날짜는 '휴무', 그 외는 '출근'을 기본값으로 반환한다.
  * @param {object} emp
@@ -953,7 +1096,7 @@ function setBulkAbsence() {
   const date = getDateStr();
   if (!state.dailyData[date]) state.dailyData[date] = { emp: {}, proj: {} };
   state.employees.forEach(emp => {
-    if (emp.longTermTrip) return;
+    if (isOnLongTrip(emp, date)) return;
     if (isPreHire(emp, date)) return;  // 입사 전 인원은 숨김 대상 — 기록 생성 안 함
     if (!state.dailyData[date].emp[emp.id]) {
       state.dailyData[date].emp[emp.id] = { status: '휴무', overtimeHours: 0, projId: '', onTrip: false, work: '', halfDayHours: 0 };
@@ -987,7 +1130,7 @@ function loadDailyData() {
     const empSection = state.dailyData[date].emp;
     if (Object.keys(empSection).length === 0) {
       state.employees.forEach(emp => {
-        if (!emp.longTermTrip && !isPreHire(emp, date)) {
+        if (!isOnLongTrip(emp, date) && !isPreHire(emp, date)) {
           empSection[emp.id] = { status: '휴무', overtimeHours: 0, projId: '', onTrip: false, work: '', halfDayHours: 0 };
         }
       });
@@ -1022,8 +1165,8 @@ function renderEmpInputGrid(empData, date) {
     if (isPreHire(emp, date)) return;
     const ed = empData[emp.id] || defaultEmpDay(emp, date);
     const d = DIVISIONS[emp.div] || { label:emp.div, cls:'' };
-    // [단계4] 장기출장자는 메인 그리드에서 제외하고 별도 섹션에 표시
-    if (emp.longTermTrip) return;
+    // [단계4] 장기출장자는 메인 그리드에서 제외하고 별도 섹션에 표시 (해당 날짜가 출장 기간 안일 때만)
+    if (isOnLongTrip(emp, date)) return;
     const isAbsent = ed.status === '휴무' || ed.status === '연차';
 
     // 직종 구분선
@@ -1092,7 +1235,7 @@ function renderEmpInputGrid(empData, date) {
   });
 
   // [단계6] 장기출장자 별도 접이식 섹션
-  const longTripEmps = state.employees.filter(emp => emp.longTermTrip);
+  const longTripEmps = state.employees.filter(emp => isOnLongTrip(emp, date));
   if (longTripEmps.length > 0) {
     const sectionId = 'longtrip-section';
     const header = document.createElement('div');
@@ -1110,13 +1253,16 @@ function renderEmpInputGrid(empData, date) {
 
     longTripEmps.forEach(emp => {
       const d2 = DIVISIONS[emp.div] || { label: emp.div, cls: '' };
+      // 출장지·복귀예정일은 이 날짜가 속한 출장 건의 값을 쓴다
+      const trip = findLongTrip(emp, date) || {};
       const badge = document.createElement('div');
       badge.style.cssText = 'padding:6px 10px;margin:4px 0;background:rgba(255,179,71,0.06);border:1px solid rgba(255,179,71,0.2);border-radius:6px;font-size:12px;color:var(--text3);display:flex;align-items:center;gap:8px;';
       badge.innerHTML =
         '<span style="color:var(--text3);">' + emp.id + '</span>' +
         '<span style="font-weight:700;color:var(--text2);">' + emp.name + '</span>' +
         '<span class="div-badge ' + d2.cls + '" style="font-size:10px;">' + d2.label + '</span>' +
-        '<span style="font-size:11px;color:var(--accent4);">✈ 장기출장 중' + (emp.tripLocation ? ' · ' + emp.tripLocation : '') + ' (집계 제외)</span>';
+        '<span style="font-size:11px;color:var(--accent4);">✈ 장기출장 중' + (trip.loc ? ' · ' + trip.loc : '') +
+          (trip.end ? ' · ~' + trip.end + ' 복귀예정' : '') + ' (집계 제외)</span>';
       sectionDiv.appendChild(badge);
     });
     grid.appendChild(sectionDiv);
@@ -1555,9 +1701,10 @@ function buildReportHTML(date) {
   const empRows = state.employees.map(emp => {
     // [입사일] 입사 전 날짜에는 업무일지에 이름을 표시하지 않음
     if (isPreHire(emp, date)) return '';
-    // 장기출장자 별도 표시
-    if (emp.longTermTrip) {
-      const locLabel = (emp.tripLocation ? emp.tripLocation + ' ' : '') + '장기출장';
+    // 장기출장자 별도 표시 (해당 날짜가 출장 기간 안일 때만)
+    const empTrip = findLongTrip(emp, date);
+    if (empTrip) {
+      const locLabel = (empTrip.loc ? empTrip.loc + ' ' : '') + '장기출장';
       return '<tr style="background:#fff8ee;">' +
         '<td class="rp-name-cell">' + emp.id + '. ' + emp.name + '</td>' +
         '<td></td>' +
@@ -1648,10 +1795,12 @@ function buildReportHTML(date) {
         '<td style="font-family:monospace;font-weight:700;">' + (prevSum+todaySum||'-') + '</td></tr>' : '');
   }).filter(Boolean).join('');
 
-  // 장기출장자 그룹화 (출장지별)
+  // 장기출장자 그룹화 (해당 날짜가 속한 출장 건의 출장지별)
   const longTripGroups = {};
-  state.employees.filter(e => e.longTermTrip).forEach(e => {
-    const loc = e.tripLocation || '미정';
+  state.employees.forEach(e => {
+    const trip = findLongTrip(e, date);
+    if (!trip) return;
+    const loc = trip.loc || '미정';
     if (!longTripGroups[loc]) longTripGroups[loc] = [];
     longTripGroups[loc].push(e.name);
   });
@@ -1862,7 +2011,7 @@ function renderStats() {
 
     state.employees.forEach(emp => {
       // [단계8] 장기출장자 집계 제외
-      if (emp.longTermTrip) return;
+      if (isOnLongTrip(emp, dateStr)) return;
       // [입사일] 입사 전 날짜는 특근·잔업·맨파워 등 모든 집계에서 제외
       if (isPreHire(emp, dateStr)) return;
 
@@ -2202,7 +2351,7 @@ function printMonthlyStats() {
 
     state.employees.forEach(emp => {
       // [단계8] 장기출장자 집계 제외
-      if (emp.longTermTrip) return;
+      if (isOnLongTrip(emp, dateStr)) return;
       // [입사일] 입사 전 날짜는 집계에서 제외
       if (isPreHire(emp, dateStr)) return;
       const ed = empData[emp.id] || { status: '출근', overtimeHours: 0 };
@@ -2500,7 +2649,7 @@ function exportMonthlyExcel() {
       const empData = data.emp || {};
       state.employees.forEach(emp => {
         // [단계8] 장기출장자 집계 제외
-        if (emp.longTermTrip) return;
+        if (isOnLongTrip(emp, dateStr)) return;
         // [입사일] 입사 전 날짜는 집계·출근현황 시트에서 제외
         if (isPreHire(emp, dateStr)) return;
         const ed = empData[emp.id] || { status: '출근', overtimeHours: 0 };
