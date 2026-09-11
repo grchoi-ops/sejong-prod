@@ -244,7 +244,7 @@ const TBM_CAL_STATUS = {
 
 let _tbmCalMonth = null;   // 'YYYY-MM'
 
-/** 그날 출근한 인원 수 — 이게 0이면 TBM이 필요 없는 날로 본다 (주말·공휴일·전사 휴무) */
+/** 그날 출근으로 기록된 인원 수 */
 function tbmWorkerCount(date) {
   const day = (state.dailyData || {})[date];
   if (!day || !day.emp) return 0;
@@ -253,15 +253,30 @@ function tbmWorkerCount(date) {
   return n;
 }
 
+/** 토·일·공휴일 — 특근으로 일했더라도 이 일지는 쓰지 않는 날 */
+function tbmIsOffDay(date) {
+  const parts = String(date).split('-').map(Number);
+  const dow = new Date(parts[0], parts[1] - 1, parts[2]).getDay();
+  if (dow === 0 || dow === 6) return true;
+  return typeof isHoliday === 'function' && isHoliday(date);
+}
+
+/** 회의록을 써야 하는 날인가 — 평일이면서 출근자가 있는 날 */
+function tbmIsTbmDay(date) {
+  return !tbmIsOffDay(date) && tbmWorkerCount(date) > 0;
+}
+
 function tbmDayStatus(date) {
   const rec = tbmFindByDate(date);
   const photos = rec ? (rec.photos || []).length : 0;
   const workers = tbmWorkerCount(date);
   let key;
-  if (rec && rec.status === 'done') key = 'done';
-  else if (photos > 0)              key = 'draft';
-  else if (workers > 0)             key = 'nophoto';   // 일한 날인데 사진조차 없다
-  else                              key = 'off';
+  // 주말·공휴일에 이미 만들어둔 기록이 있으면 그 상태는 그대로 보여준다.
+  // 빠졌다고(nophoto) 몰아세우지만 않으면 된다.
+  if (rec && rec.status === 'done')  key = 'done';
+  else if (photos > 0)               key = 'draft';
+  else if (tbmIsTbmDay(date))        key = 'nophoto';   // 일한 평일인데 사진조차 없다
+  else                               key = 'off';
   return { key: key, rec: rec, photos: photos, workers: workers };
 }
 
@@ -276,8 +291,12 @@ function tbmCalShift(n) {
 function tbmCalPick(date) {
   if (tbmFindByDate(date)) { tbmOpen(date); return; }
   if (tbmIsViewer()) { tbmMsg('열람용 계정은 새로 만들 수 없습니다.', 'error'); return; }
-  // 출근 기록이 없는 날은 잘못 누른 경우가 대부분이라 한 번 묻는다
-  if (!tbmWorkerCount(date) && !confirm(tbmKorDate(date) + '은 출근 기록이 없는 날입니다.\n그래도 회의록을 만들까요?')) return;
+  // 회의록을 쓰지 않는 날(토·일·공휴일, 출근 기록 없는 날)은 잘못 누른 경우가 대부분이라 한 번 묻는다
+  if (!tbmIsTbmDay(date)) {
+    const why = tbmIsOffDay(date) ? '은 토·일·공휴일이라 회의록을 쓰지 않는 날입니다.'
+                                  : '은 출근 기록이 없는 날입니다.';
+    if (!confirm(tbmKorDate(date) + why + '\n그래도 회의록을 만들까요?')) return;
+  }
   tbmCollect();
   tbmFindOrCreateDraft(date);
   if (typeof saveState === 'function') saveState();
@@ -308,7 +327,7 @@ function tbmRenderCal() {
 
     const tip = tbmKorDate(date) + ' — ' + TBM_CAL_STATUS[st.key].label +
       (st.photos ? ' · 사진 ' + st.photos + '장' : '') +
-      (st.workers ? ' · 출근 ' + st.workers + '명' : ' · 출근 기록 없음');
+      (tbmIsOffDay(date) ? ' · 토·일·공휴일' : (st.workers ? ' · 출근 ' + st.workers + '명' : ' · 출근 기록 없음'));
 
     cells.push(
       '<button class="tbm-cal-cell ' + TBM_CAL_STATUS[st.key].cls +
