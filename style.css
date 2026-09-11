@@ -187,10 +187,113 @@ select option { background: var(--surface2); }
   display: flex;
   align-items: center;
   gap: 6px;
-  /* 장기출장 기간(시작일~복귀일) 입력이 추가되면 폭이 넘칠 수 있어 줄바꿈 허용 */
+  /* 날짜 항목은 둘째 줄(.emp-card-dates)로 내려가므로 줄바꿈 허용 */
   flex-wrap: wrap;
-  row-gap: 5px;
+  row-gap: 6px;
 }
+/* 직원 카드 둘째 줄 — 입사일 · 장기출장 기간 */
+.emp-card-dates {
+  flex-basis: 100%;   /* 항상 새 줄에서 시작 */
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+.emp-date-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--text3);
+}
+.emp-date-field input[type="date"] {
+  font-size: 10px;
+  padding: 1px 4px;
+}
+.emp-date-label {
+  white-space: nowrap;
+  font-weight: 600;
+}
+/* ── 장기출장 이력 ────────────────────────────
+   요약 칩만 항상 보이고, 기간 목록은 칩을 눌렀을 때만 펼쳐진다.   */
+.trip-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 2px 7px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--text3);
+  background: var(--surface3);
+  border: 1px solid var(--border);
+}
+.trip-chip:hover { color: var(--text2); border-color: var(--accent4); }
+/* 오늘 기준으로 출장 중이면 눈에 띄게 */
+.trip-chip.is-active {
+  color: var(--accent4);
+  background: rgba(255, 179, 71, 0.12);
+  border-color: rgba(255, 179, 71, 0.45);
+}
+.trip-chip.is-add { color: var(--text3); background: transparent; border-style: dashed; }
+.trip-chip-caret { font-size: 9px; opacity: 0.8; }
+
+.trip-history {
+  flex-basis: 100%;   /* 항상 새 줄 */
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: rgba(255, 179, 71, 0.05);
+  border: 1px solid rgba(255, 179, 71, 0.2);
+  align-items: flex-start;
+}
+.trip-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--text3);
+}
+.trip-row input[type="date"] { font-size: 10px; padding: 1px 4px; }
+.trip-row-tilde { color: var(--accent4); }
+.trip-row-loc {
+  font-size: 10px;
+  width: 80px;
+  padding: 1px 4px;
+  color: var(--accent4);
+  border: 1px solid rgba(255, 179, 71, 0.4);
+  border-radius: 4px;
+  background: rgba(255, 179, 71, 0.08);
+}
+/* 복귀일이 비어 있는 = 현재 진행 중인 출장 */
+.trip-row-tag {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--accent4);
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: rgba(255, 179, 71, 0.15);
+}
+.trip-row.is-now input[type="date"] { border-color: rgba(255, 179, 71, 0.5); }
+.trip-row-del {
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  cursor: pointer;
+  color: var(--text3);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.trip-row-del:hover { color: #fff; background: var(--red, #e5484d); border-color: transparent; }
 .emp-num {
   font-family: var(--mono);
   font-size: 11px;
