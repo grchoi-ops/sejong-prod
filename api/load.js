@@ -1,5 +1,6 @@
 // api/load.js - 데이터 불러오기
 const { createClient } = require('@supabase/supabase-js');
+const { readAll, isLive } = require('./_purchase');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -32,19 +33,35 @@ module.exports = async (req, res) => {
                 : (typeof mdRaw === 'string' ? (() => { try { const p = JSON.parse(mdRaw); return Array.isArray(p) ? p : []; } catch { return []; } })()
                 : []);
 
+    // 구매요청은 행 단위 테이블(purchase_items)이 있으면 그쪽이 원본이다.
+    // 아직 테이블을 만들지 않았거나 이관 전이면 예전 app_data.purchaseDB를 그대로
+    // 쓴다 — SQL 실행 전에 배포해도 앱이 멀쩡히 돌아가게 하기 위함.
+    let purchaseDB = result.purchaseDB || [];
+    let purchaseSource = 'app_data';
+    if (await isLive(supabase)) {
+      try {
+        purchaseDB = await readAll(supabase);
+        purchaseSource = 'purchase_items';
+      } catch (e) {
+        purchaseSource = 'app_data (purchase_items 읽기 실패: ' + e.message + ')';
+      }
+    }
+
     return res.status(200).json({
       success: true,
       _debug: {
         rowCount: data.length,
         keys: data.map(r => r.key),
         mdRawType: Array.isArray(mdRaw) ? 'array' : typeof mdRaw,
-        mdLength: mdArr.length
+        mdLength: mdArr.length,
+        purchaseSource,
+        purchaseCount: purchaseDB.length
       },
       data: {
         employees:    result.employees    || [],
         projects:     result.projects     || [],
         dailyData:    result.dailyData    || {},
-        purchaseDB:   result.purchaseDB   || [],
+        purchaseDB,
         purchaseDrafts: result.purchaseDrafts || [],
         mdEntries:    mdArr,
         dailyReports: result.dailyReports || {},
