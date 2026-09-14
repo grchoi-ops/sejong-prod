@@ -70,7 +70,13 @@ async function tbmSave(silent) {
   tbmCollect();
   if (typeof saveState === 'function') saveState();
   tbmRenderList();
-  if (typeof saveFieldsToSheet === 'function') await saveFieldsToSheet(['tbmRecords']);
+  try {
+    if (typeof saveFieldsToSheet === 'function') await saveFieldsToSheet(['tbmRecords']);
+  } catch (e) {
+    tbmSetStatus('서버 저장 실패 — 이 브라우저에만 있음');
+    tbmMsg('서버 저장 실패: ' + e.message, 'error');
+    return;
+  }
   tbmSetStatus('서버 저장됨');
   if (!silent) tbmMsg('저장했습니다', 'success');
 }
@@ -209,7 +215,11 @@ async function tbmIngest(files, targetDate) {
   const dates = Object.keys(res.byDate).sort();
   if (res.added) {
     if (typeof saveState === 'function') saveState();
-    if (typeof saveFieldsToSheet === 'function') await saveFieldsToSheet(['tbmRecords']);
+    try {
+      if (typeof saveFieldsToSheet === 'function') await saveFieldsToSheet(['tbmRecords']);
+    } catch (e) {
+      tbmMsg('사진은 등록됐지만 서버 저장에 실패했습니다: ' + e.message, 'error');
+    }
     const src = [];
     if (res.sources.exif)     src.push('촬영정보 ' + res.sources.exif);
     if (res.sources.filename) src.push('파일명 ' + res.sources.filename);
@@ -405,7 +415,7 @@ function tbmDelete() {
   if (!confirm(tbmKorDate(rec.date) + ' 회의록을 삭제하시겠습니까?\n(첨부 사진 ' + (rec.photos || []).length + '장의 연결도 함께 사라집니다)')) return;
   state.tbmRecords = tbmRecords().filter(r => r !== rec);
   if (typeof saveState === 'function') saveState();
-  if (typeof saveFieldsToSheet === 'function') saveFieldsToSheet(['tbmRecords']);
+  if (typeof saveFieldsToSheet === 'function') saveFieldsToSheet(['tbmRecords']).catch(e => tbmMsg('서버 저장 실패: ' + e.message, 'error'));
   _tbmDate = null;
   tbmRenderList();
   tbmOpen(tbmPickInitialDate());
@@ -906,7 +916,7 @@ function tbmPrint() {
   if (!tbmIsViewer() && rec.status !== 'done') {
     rec.status = 'done';                  // 인쇄했다면 작성이 끝난 것으로 본다
     if (typeof saveState === 'function') saveState();
-    if (typeof saveFieldsToSheet === 'function') saveFieldsToSheet(['tbmRecords']);
+    if (typeof saveFieldsToSheet === 'function') saveFieldsToSheet(['tbmRecords']).catch(e => tbmMsg('서버 저장 실패: ' + e.message, 'error'));
     tbmRenderList();
     tbmRenderEditor();
   }
@@ -932,7 +942,7 @@ function tbmPrintRange() {
   if (drafts.length) {
     drafts.forEach(r => { r.status = 'done'; r.updatedAt = Date.now(); });
     if (typeof saveState === 'function') saveState();
-    if (typeof saveFieldsToSheet === 'function') saveFieldsToSheet(['tbmRecords']);
+    if (typeof saveFieldsToSheet === 'function') saveFieldsToSheet(['tbmRecords']).catch(e => tbmMsg('서버 저장 실패: ' + e.message, 'error'));
     tbmRenderList();
     tbmRenderEditor();
   }

@@ -65,8 +65,13 @@ module.exports = async (req, res) => {
   try {
     const { employees, projects, dailyData, purchaseDB, purchaseDrafts, mdEntries, dailyReports, overtimeReports, tbmRecords, lastModified, modifiedBy } = req.body;
 
-    // 실질 데이터 변경 시에만 스냅샷 저장
-    const hasRealData = employees !== undefined || projects !== undefined || dailyData !== undefined || dailyReports !== undefined || overtimeReports !== undefined || tbmRecords !== undefined;
+    // 실질 데이터 변경 시에만 스냅샷 저장.
+    // 구매요청(purchaseDB·purchaseDrafts)과 M/D(mdEntries)도 실데이터다. 예전엔
+    // 빠져 있어서 구매요청만 저장한 순간은 스냅샷이 남지 않았고, 데이터가 유실돼도
+    // 되돌릴 지점이 없었다.
+    const hasRealData = employees !== undefined || projects !== undefined || dailyData !== undefined
+      || purchaseDB !== undefined || purchaseDrafts !== undefined || mdEntries !== undefined
+      || dailyReports !== undefined || overtimeReports !== undefined || tbmRecords !== undefined;
     if (hasRealData) await saveSnapshot(modifiedBy);
 
     const tasks = [];

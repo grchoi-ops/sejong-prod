@@ -6,7 +6,14 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-const DATA_KEYS = ['employees', 'projects', 'dailyData', 'purchaseDB', 'mdEntries', 'dailyReports', 'overtimeReports', 'tbmRecords', 'lastModified', 'modifiedBy'];
+const DATA_KEYS = ['employees', 'projects', 'dailyData', 'purchaseDB', 'purchaseDrafts', 'mdEntries', 'dailyReports', 'overtimeReports', 'tbmRecords', 'lastModified', 'modifiedBy'];
+
+/** 스냅샷 안의 값이 몇 건짜리인지 한 줄로 요약 (배열=길이, 객체=키 수) */
+function describeValue(v) {
+  if (Array.isArray(v)) return { type: 'array', count: v.length };
+  if (v && typeof v === 'object') return { type: 'object', count: Object.keys(v).length };
+  return { type: typeof v, value: v };
+}
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -16,8 +23,44 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    // ── GET: 스냅샷 목록 ──
+    // ── GET: 스냅샷 목록, 또는 ?id= 로 특정 스냅샷 내용 조회(읽기 전용) ──
+    // 복원(POST)은 현재 데이터를 덮어쓰므로, "그때 무슨 데이터가 있었는지"만
+    // 확인하고 싶을 때 쓸 수 있는 안전한 경로가 필요하다.
+    //   GET /api/backup                      → 목록
+    //   GET /api/backup?id=533               → 그 스냅샷의 키별 건수 요약
+    //   GET /api/backup?id=533&key=purchaseDB → 해당 키의 실제 값
     if (req.method === 'GET') {
+      const id  = req.query?.id;
+      const key = req.query?.key;
+
+      if (id) {
+        const { data, error } = await supabase
+          .from('app_data_history')
+          .select('saved_at, saved_by, snapshot')
+          .eq('id', id)
+          .single();
+
+        if (error || !data) throw error || new Error('스냅샷을 찾을 수 없습니다');
+
+        const snapshot = data.snapshot || {};
+
+        if (key) {
+          if (!DATA_KEYS.includes(key)) {
+            return res.status(400).json({ success: false, error: '알 수 없는 key: ' + key });
+          }
+          return res.status(200).json({
+            success: true, id: Number(id), saved_at: data.saved_at, saved_by: data.saved_by,
+            key, value: snapshot[key] === undefined ? null : snapshot[key]
+          });
+        }
+
+        const summary = {};
+        Object.keys(snapshot).forEach(k => { summary[k] = describeValue(snapshot[k]); });
+        return res.status(200).json({
+          success: true, id: Number(id), saved_at: data.saved_at, saved_by: data.saved_by, summary
+        });
+      }
+
       const { data, error } = await supabase
         .from('app_data_history')
         .select('id, saved_at, saved_by')

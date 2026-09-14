@@ -276,11 +276,55 @@ function switchToTab(tabId) {
 // ⚠️ Vercel 배포 후 아래 URL을 실제 Vercel URL로 교체
 const API_BASE = 'https://sejong-prod.vercel.app';
 
-let _isSyncing = false;
-let _pendingSync = false;
-let _pendingSyncFields = null;
+// 서버 저장은 한 번에 하나씩만 나가야 한다(같은 키를 동시에 upsert하면 나중 것이
+// 이긴다). 예전엔 저장이 겹치면 뒤엣것을 _pendingSyncFields 한 칸에 덮어써서,
+// 대기 중이던 필드가 통째로 사라지는 일이 있었다. 이제는 약속 체인으로 줄을 세워
+// 모든 저장이 자기 필드 그대로, 순서대로 실제 전송된다.
+let _syncChain = Promise.resolve();
 const ALL_SYNC_FIELDS = ['employees', 'projects', 'dailyData', 'purchaseDB', 'purchaseDrafts', 'mdEntries', 'dailyReports', 'overtimeReports', 'tbmRecords'];
 const _SYNC_FIELD_DEFAULTS = { purchaseDB: [], purchaseDrafts: [], mdEntries: [], dailyReports: {}, overtimeReports: [], tbmRecords: [] };
+
+// 서버 저장이 확인되지 않은 구매요청 행을 따로 보관하는 localStorage 키.
+// 서버 저장이 실패한 채 새로고침하면 loadFromSheet()가 로컬을 서버 데이터로
+// 덮어써서 방금 입력한 내용이 사라졌다. 이 대기열에 남겨두고 다음 로드 때 되살린다.
+const PR_PENDING_KEY = 'sejong_pr_pending_v1';
+
+/** 구매요청 행 1건을 구분하는 지문 (id가 없는 구조라 내용으로 식별한다) */
+function _prRowSig(r) {
+  return [r.ts, r.claim, r.itemNo, r.itemName, r.itemSpec, r.itemQty].join('');
+}
+
+function _prLoadPending() {
+  try {
+    const raw = localStorage.getItem(PR_PENDING_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+
+function _prSavePending(rows) {
+  try {
+    if (!rows || rows.length === 0) localStorage.removeItem(PR_PENDING_KEY);
+    else localStorage.setItem(PR_PENDING_KEY, JSON.stringify(rows));
+  } catch (e) { console.warn('[pr] 대기열 저장 실패:', e.message); }
+}
+
+/** 서버 저장 전에 "아직 확인 안 된 행"으로 등록 */
+function _prMarkPending(rows) {
+  const pending = _prLoadPending();
+  const seen = new Set(pending.map(_prRowSig));
+  rows.forEach(r => { if (!seen.has(_prRowSig(r))) { pending.push(r); seen.add(_prRowSig(r)); } });
+  _prSavePending(pending);
+}
+
+/** 서버 저장이 확인되면 대기열에서 제거 */
+function _prClearPending(rows) {
+  const done = new Set(rows.map(_prRowSig));
+  _prSavePending(_prLoadPending().filter(r => !done.has(_prRowSig(r))));
+}
+
+/** 미동기화 구매요청 건수 (화면 경고용) */
+function prPendingCount() { return _prLoadPending().length; }
 
 function setSyncStatus(status, msg) {
   const el = document.getElementById('sync-status');
@@ -506,6 +550,7 @@ async function loadFromSheet() {
       state.tbmRecords = d.tbmRecords || [];
       state._lastSyncTime = d.lastModified || new Date().toISOString();
       migrateStateFields();
+      _prRestorePending();
       saveLocal();
       setSyncStatus('ok', '서버 연결됨');
       return true;
@@ -516,6 +561,29 @@ async function loadFromSheet() {
     setSyncStatus('offline', '오프라인 (로컬 사용 중)');
     return false;
   }
+}
+
+/**
+ * 서버에서 방금 받아온 purchaseDB에, 서버 저장이 확인되지 않은 구매요청 행을 되살린다.
+ * 서버에 이미 있는 행은 대기열에서 지우고, 없는 행만 붙인 뒤 사용자에게 알린다.
+ * (삭제된 행이 되살아나지 않도록, 저장이 확인되지 않은 행만 대기열에 담는다)
+ */
+function _prRestorePending() {
+  const pending = _prLoadPending();
+  if (pending.length === 0) return;
+
+  const onServer = new Set((state.purchaseDB || []).map(_prRowSig));
+  const missing  = pending.filter(r => !onServer.has(_prRowSig(r)));
+
+  // 서버에 반영된 것들은 대기열에서 정리
+  _prSavePending(missing);
+  if (missing.length === 0) return;
+
+  state.purchaseDB = (state.purchaseDB || []).concat(missing);
+  console.warn('[pr] 서버에 없는 미동기화 구매요청 ' + missing.length + '건을 로컬에서 복구했습니다.');
+  setTimeout(() => {
+    showToast('서버에 저장되지 않은 구매요청 ' + missing.length + '건을 복구했습니다. 구매요청 탭에서 다시 저장해 주세요.', 'error');
+  }, 1200);
 }
 
 // ── 서버로 저장 ──
@@ -542,8 +610,21 @@ async function saveToSheet() {
 // 필드만 넘기면, 그 순간 메모리에 있는 다른 탭의(아직 저장 안 됐을 수도 있는)
 // 데이터는 건드리지 않는다. /api/save는 요청 본문에 담긴 키만 각각 upsert한다.
 async function saveFieldsToSheet(fields) {
-  if (_isSyncing) { _pendingSync = true; _pendingSyncFields = fields; return; }
-  _isSyncing = true;
+  // 앞선 저장이 끝난 뒤 내 차례를 실행한다. 앞 저장이 실패했더라도 내 저장은 진행한다.
+  const run = () => _doSaveFields(fields);
+  const mine = _syncChain.then(run, run);
+  // 체인 꼬리는 항상 성공 상태로 유지해 다음 저장이 막히지 않게 하고,
+  // 실패는 호출부가 받는 약속(mine)으로만 전달한다.
+  _syncChain = mine.catch(() => {});
+  return mine;
+}
+
+/**
+ * 실제 전송. 저장이 실패하거나 사용자가 충돌 대화상자에서 취소하면 예외를 던진다.
+ * 예전엔 여기서 에러를 삼키고 정상 반환해서, 호출부의 catch가 한 번도 실행되지
+ * 않았다 — 서버에 아무것도 저장되지 않아도 화면엔 늘 "저장 완료"가 떴다.
+ */
+async function _doSaveFields(fields) {
   setSyncStatus('syncing', '저장 중...');
   try {
     // [R2] 충돌 감지
@@ -554,10 +635,16 @@ async function saveFieldsToSheet(fields) {
         '⚠️ 서버에 더 최근 데이터가 있습니다.\n' +
         '서버 저장 시각: ' + sTime + '\n' +
         '수정자: ' + conflict.modifiedBy + '\n\n' +
-        '현재 데이터로 덮어쓰시겠습니까?\n' +
-        '(취소하면 서버 데이터를 먼저 불러올 수 있습니다)'
+        '이번에 보낼 항목: ' + fields.join(', ') + '\n' +
+        '계속하면 위 항목은 지금 내 화면의 내용으로 덮어써집니다.\n' +
+        '(' + conflict.modifiedBy + '님이 방금 같은 항목을 고쳤다면 그 내용이 사라집니다)\n\n' +
+        '계속하시겠습니까?\n' +
+        '취소하면 저장하지 않습니다 — 새로고침해 서버 데이터를 먼저 받으세요.'
       );
-      if (!ok) { _isSyncing = false; setSyncStatus('idle', '저장 취소됨'); return; }
+      if (!ok) {
+        setSyncStatus('idle', '저장 취소됨');
+        throw new Error('서버에 더 최근 데이터가 있어 저장을 취소했습니다');
+      }
     }
     const body = {
       lastModified: new Date().toISOString(),
@@ -569,20 +656,14 @@ async function saveFieldsToSheet(fields) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
+    if (!res.ok) throw new Error('서버 응답 오류 (HTTP ' + res.status + ')');
     const json = await res.json();
     if (!json.success) throw new Error(json.error || '저장 실패');
     state._lastSyncTime = new Date().toISOString();
     setSyncStatus('ok', '서버 저장됨');
   } catch(e) {
     setSyncStatus('error', '저장 실패: ' + e.message);
-  } finally {
-    _isSyncing = false;
-    if (_pendingSync) {
-      _pendingSync = false;
-      const pendingFields = _pendingSyncFields || ALL_SYNC_FIELDS;
-      _pendingSyncFields = null;
-      saveFieldsToSheet(pendingFields);
-    }
+    throw e;
   }
 }
 // 통합 saveState: 로컬만 즉시 저장 (서버는 버튼으로만)
@@ -591,9 +672,66 @@ function saveState() {
   setSyncStatus('idle', '로컬 저장됨 (미동기화)');
 }
 
-// 수동 서버 동기화 (버튼 클릭)
+/**
+ * 두 배열을 합친다. 같은 항목은 내 것(local)을 쓰고, 서버에만 있는 항목은 남긴다.
+ * @param {Array} local  내 화면의 배열
+ * @param {Array} server 서버의 배열
+ * @param {Function} sigOf 항목 구분 지문
+ */
+function _unionRows(local, server, sigOf) {
+  const out  = Array.isArray(local) ? local.slice() : [];
+  const seen = new Set(out.map(sigOf));
+  (Array.isArray(server) ? server : []).forEach(r => {
+    const s = sigOf(r);
+    if (!seen.has(s)) { out.push(r); seen.add(s); }
+  });
+  return out;
+}
+
+/** 날짜 등으로 키가 잡힌 객체 병합 — 같은 키는 내 것, 서버에만 있는 키는 남긴다 */
+function _unionByKey(local, server) {
+  return Object.assign({}, (server && typeof server === 'object') ? server : {},
+                           (local  && typeof local  === 'object') ? local  : {});
+}
+
+/**
+ * 수동 서버 동기화 (헤더 "☁️ 서버 저장" 버튼).
+ *
+ * 예전엔 이 버튼이 내 메모리의 전 필드를 그대로 서버에 밀어넣었다. 아침에 앱을
+ * 열어두고 오후에 이 버튼을 누르면, 그 사이 다른 사람이 올린 구매요청·M/D·TBM이
+ * 내 오래된 배열로 통째로 덮여 사라졌다. 이제는 보내기 직전에 서버 최신본을 받아
+ * 합친 뒤 저장하므로, 이 버튼이 남의 기록을 지우지 않는다.
+ * (내가 지운 항목이 서버에 남아 있으면 되살아날 수 있다 — 삭제는 각 탭의 삭제
+ *  버튼이 그 자리에서 서버에 반영하므로 정상 동선에서는 문제되지 않는다)
+ */
 async function manualSync() {
-  await saveToSheet();
+  try {
+    const res  = await fetch(API_BASE + '/api/load');
+    const json = await res.json();
+    const d = (json && json.success && json.data) ? json.data : null;
+    if (d) {
+      const byId = r => String(r && r.id);
+      state.purchaseDB      = _unionRows(state.purchaseDB,      d.purchaseDB,      _prRowSig);
+      state.purchaseDrafts  = _unionRows(state.purchaseDrafts,  d.purchaseDrafts,  byId);
+      state.mdEntries       = _unionRows(state.mdEntries,       d.mdEntries,       byId);
+      state.overtimeReports = _unionRows(state.overtimeReports, d.overtimeReports, byId);
+      state.tbmRecords      = _unionRows(state.tbmRecords,      d.tbmRecords,      byId);
+      state.dailyData       = _unionByKey(state.dailyData,      d.dailyData);
+      state.dailyReports    = _unionByKey(state.dailyReports,   d.dailyReports);
+      // 서버 내용을 이미 반영했으므로 충돌 대화상자가 뜨지 않게 기준 시각을 맞춘다
+      state._lastSyncTime = d.lastModified || state._lastSyncTime;
+      saveLocal();
+    }
+  } catch (e) {
+    console.warn('[sync] 저장 전 서버 병합 실패, 현재 데이터로 진행:', e.message);
+  }
+
+  try {
+    await saveToSheet();
+    showToast('서버 저장 완료', 'success');
+  } catch (e) {
+    showToast('서버 저장 실패: ' + e.message, 'error');
+  }
 }
 
 // 현재 로컬 데이터를 서버로 강제 이전
@@ -602,13 +740,18 @@ async function migrateToSheet() {
   const btn = document.getElementById('migrate-btn');
   btn.textContent = '⏳ 업로드 중...';
   btn.disabled = true;
-  await saveToSheet();
-  btn.textContent = '☁️ 이전 완료!';
+  try {
+    await saveToSheet();
+    btn.textContent = '☁️ 이전 완료!';
+    showToast('서버로 이전 완료!', 'success');
+  } catch (e) {
+    btn.textContent = '❌ 이전 실패';
+    showToast('서버로 이전 실패: ' + e.message, 'error');
+  }
   setTimeout(() => {
     btn.textContent = '☁️ 현재 데이터 → 서버로 이전';
     btn.disabled = false;
   }, 3000);
-  showToast('서버로 이전 완료!', 'success');
 }
 
 // 서버에서 강제 재로드
@@ -1631,7 +1774,7 @@ async function saveDailyData() {
     await saveFieldsToSheet(['dailyData']);
     showToast('저장 완료', 'success');
   } catch(e) {
-    showToast('서버 저장 실패 (로컬엔 저장됨)', 'error');
+    showToast('⚠️ 서버 저장 실패: ' + e.message + ' (이 브라우저에만 남아 있습니다)', 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '✓ 저장'; }
     // [N3] 저장 후 알림 재체크
@@ -3174,7 +3317,7 @@ async function saveWoData() {
     await saveFieldsToSheet(['dailyData']);
     showToast('저장 완료', 'success');
   } catch(e) {
-    showToast('서버 저장 실패 (로컬엔 저장됨)', 'error');
+    showToast('⚠️ 서버 저장 실패: ' + e.message + ' (이 브라우저에만 남아 있습니다)', 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '✓ 저장'; }
   }
@@ -4346,41 +4489,46 @@ async function pr_saveEntry() {
   const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
     .replace(/\//g, '-').replace(' ', ' ').replace(/\./g, '-').replace(/ -$/, '');
 
-  items.forEach(item => {
-    state.purchaseDB.push({
-      ts:       now,
-      claim:    claimNo,
-      date:     reqDate.replace(/-/g, '.'),
-      projId:   proj.id,
-      projName: proj.client,
-      projCode: proj.code || '',
-      site, manager, position, phone,
-      itemNo:   item.itemNo,
-      itemName: item.itemName,
-      itemSpec: item.itemSpec,
-      itemQty:  item.itemQty,
-      itemNote: item.itemNote
-    });
-  });
+  const newRows = items.map(item => ({
+    ts:       now,
+    claim:    claimNo,
+    date:     reqDate.replace(/-/g, '.'),
+    projId:   proj.id,
+    projName: proj.client,
+    projCode: proj.code || '',
+    site, manager, position, phone,
+    itemNo:   item.itemNo,
+    itemName: item.itemName,
+    itemSpec: item.itemSpec,
+    itemQty:  item.itemQty,
+    itemNote: item.itemNote
+  }));
+  newRows.forEach(row => state.purchaseDB.push(row));
 
   // 초안에서 불러와 확정 저장한 경우, 해당 초안은 임시저장 목록에서 제거
   if (pr_currentDraftId) {
     state.purchaseDrafts = (state.purchaseDrafts || []).filter(d => d.id !== pr_currentDraftId);
   }
 
+  // 서버 저장이 확인될 때까지 대기열에 남긴다. 저장이 실패한 채 새로고침해도
+  // loadFromSheet()가 이 행들을 되살린다.
+  _prMarkPending(newRows);
   saveState();
   const btn = document.getElementById('pr-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
 
   try {
     await saveFieldsToSheet(['purchaseDB', 'purchaseDrafts']);
+    _prClearPending(newRows);
     showToast(items.length + '개 품목 저장 완료', 'success');
     pr_resetForm();
     pr_renderDrafts();
   } catch(e) {
-    showToast('서버 저장 실패 (로컬엔 저장됨)', 'error');
+    // 폼은 일부러 비우지 않는다 — 서버에 안 들어갔으므로 사용자가 다시 저장할 수 있어야 한다
+    showToast('⚠️ 서버 저장 실패: ' + e.message + '\n이 브라우저에만 남아 있습니다. 다시 저장해 주세요.', 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+    pr_renderDB();
   }
 }
 
@@ -4462,8 +4610,9 @@ function pr_saveDraft() {
   saveState();
   _pr_updateDraftEditingLabel();
   pr_renderDrafts();
-  showToast('임시 저장되었습니다. (' + items.length + '개 품목)', 'success');
-  saveFieldsToSheet(['purchaseDrafts']).catch(() => {});
+  saveFieldsToSheet(['purchaseDrafts'])
+    .then(() => showToast('임시 저장되었습니다. (' + items.length + '개 품목)', 'success'))
+    .catch(e => showToast('⚠️ 임시저장 서버 반영 실패: ' + e.message + ' (이 브라우저에만 남아 있습니다)', 'error'));
 }
 
 /**
@@ -4561,8 +4710,9 @@ function pr_deleteDraft(id) {
   if (pr_currentDraftId === id) { pr_currentDraftId = null; _pr_updateDraftEditingLabel(); }
   saveState();
   pr_renderDrafts();
-  showToast('삭제되었습니다.', 'success');
-  saveFieldsToSheet(['purchaseDrafts']).catch(() => {});
+  saveFieldsToSheet(['purchaseDrafts'])
+    .then(() => showToast('삭제되었습니다.', 'success'))
+    .catch(e => showToast('⚠️ 삭제가 서버에 반영되지 않았습니다: ' + e.message, 'error'));
 }
 
 /**
@@ -4612,7 +4762,22 @@ function pr_renderDB() {
     return (row.projName + row.claim + row.itemName + row.manager + row.site).toLowerCase().includes(q);
   });
 
-  if (countEl) countEl.textContent = '총 ' + db.length + '건';
+  // 서버 저장이 확인되지 않은 건이 있으면 건수 옆에 눈에 띄게 표시한다.
+  // 이게 없어서, 서버에 안 올라간 줄 모른 채 새로고침하고 데이터를 잃었다.
+  const pendingN = prPendingCount();
+  if (countEl) {
+    countEl.textContent = '총 ' + db.length + '건';
+    if (pendingN > 0) {
+      countEl.textContent += ' · ⚠️ 서버 미저장 ' + pendingN + '건';
+      countEl.style.color = 'var(--red)';
+      countEl.style.fontWeight = '700';
+      countEl.title = '이 브라우저에만 있는 구매요청입니다. 헤더의 "☁️ 서버 저장"을 눌러 올려주세요.';
+    } else {
+      countEl.style.color = '';
+      countEl.style.fontWeight = '';
+      countEl.title = '';
+    }
+  }
 
   if (db.length === 0) {
     tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text3);padding:24px;">저장된 구매요청 데이터가 없습니다.</td></tr>';
@@ -4687,10 +4852,16 @@ function pr_viewEntry(claimNo) {
 
 function pr_deleteRow(idx) {
   if (!confirm('이 항목을 삭제하시겠습니까?')) return;
-  state.purchaseDB.splice(idx, 1);
+  const removed = state.purchaseDB.splice(idx, 1);
+  // 삭제한 행이 미동기화 대기열에 남아 있으면 함께 지운다 — 안 그러면
+  // 다음 로드 때 _prRestorePending()이 되살린다.
+  _prClearPending(removed);
   saveState();
   pr_renderDB();
-  showToast('삭제 완료', 'success');
+  // 예전엔 로컬에서만 지워서, 새로고침하면 서버 데이터로 되살아났다.
+  saveFieldsToSheet(['purchaseDB'])
+    .then(() => showToast('삭제 완료', 'success'))
+    .catch(e => showToast('⚠️ 삭제가 서버에 반영되지 않았습니다: ' + e.message, 'error'));
 }
 
 /**
@@ -5108,7 +5279,10 @@ async function md_doChangePinFirst(empId) {
   emp.pin = np;
   emp.pinChanged = true;
   saveLocal();
-  await saveToSheet();
+  // PIN은 직원 정보만 바뀐다. 전 필드를 보내면 이 브라우저의 오래된 구매요청·M/D가
+  // 서버의 최신본을 덮어쓴다 (실제로 9월 구매요청이 이렇게 사라졌다).
+  try { await saveFieldsToSheet(['employees']); }
+  catch (e) { showToast('PIN 서버 반영 실패: ' + e.message, 'error'); }
   md_setCurrentUser(emp);
   md_showError('');
   showToast('PIN 변경 완료! 환영합니다, ' + emp.name + '님', 'success');
@@ -5152,8 +5326,9 @@ async function md_changePin() {
   emp.pin = newPin;
   emp.pinChanged = true;
   saveLocal();
-  showToast('PIN 변경 완료', 'success');
-  saveToSheet();
+  saveFieldsToSheet(['employees'])
+    .then(() => showToast('PIN 변경 완료', 'success'))
+    .catch(e => showToast('PIN 서버 반영 실패: ' + e.message, 'error'));
 }
 
 // ── 앱 진입 후 초기화 ──
@@ -5290,13 +5465,16 @@ function md_confirmSave() {
     });
   });
   saveLocal();
-  showToast(`${valid.length}건 저장 완료`, 'success');
   document.getElementById('md-input').value = '';
   document.getElementById('md-preview').innerHTML = '';
   md_parsedResults = [];
   md_renderRecent();
   md_renderSummary();
-  saveToSheet();
+  // M/D는 mdEntries만 바꾼다. 전 필드를 보내면 이 브라우저가 로그인 때 받아둔
+  // 구매요청·TBM 사본이 그 사이 올라온 남의 최신 기록을 덮어쓴다.
+  saveFieldsToSheet(['mdEntries'])
+    .then(() => showToast(`${valid.length}건 저장 완료`, 'success'))
+    .catch(e => showToast('서버 저장 실패: ' + e.message, 'error'));
 }
 
 function md_cancelParse() {
@@ -5477,10 +5655,11 @@ function md_deleteEntry(id) {
   if (!confirm('이 기록을 삭제하시겠습니까?')) return;
   state.mdEntries = state.mdEntries.filter(e => e.id !== id);
   saveLocal();
-  showToast('삭제 완료', 'success');
   md_renderRecent();
   md_renderSummary();
-  saveToSheet();
+  saveFieldsToSheet(['mdEntries'])
+    .then(() => showToast('삭제 완료', 'success'))
+    .catch(e => showToast('서버 반영 실패: ' + e.message, 'error'));
 }
 
 function md_exportCSV() {
