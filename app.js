@@ -4547,7 +4547,7 @@ function _pr_collectItems() {
 /**
  * 구매요청 저장
  */
-async function pr_saveEntry() {
+async function pr_saveEntry(andPrint) {
   const sel     = document.getElementById('pr-proj-sel');
   const projId  = sel ? sel.value : '';
   const proj    = state.projects.find(p => String(p.id) === projId);
@@ -4591,8 +4591,10 @@ async function pr_saveEntry() {
   // loadFromSheet()가 이 행들을 되살린다.
   _prMarkPending(newRows);
   saveState();
-  const btn = document.getElementById('pr-save-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
+  const btn     = document.getElementById('pr-save-btn');
+  const btnOnly = document.getElementById('pr-save-only-btn');
+  if (btn)     { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
+  if (btnOnly) { btnOnly.disabled = true; }
 
   try {
     // 새로 입력한 행만 보낸다. 배열 전체를 덮어쓰지 않으므로 같은 순간 다른 사람이
@@ -4602,14 +4604,32 @@ async function pr_saveEntry() {
     // 그 사이 다른 사람이 올린 행까지 반영해 목록을 맞춘다 (실패해도 저장은 끝난 것)
     await prReloadItems().catch(() => {});
     if (pr_currentDraftId) await saveFieldsToSheet(['purchaseDrafts']).catch(() => {});
+
+    // 방금 저장한 건을 기억해 둔다. 폼은 비우되 결과 카드로 남겨서, 인쇄하려고
+    // 구매 데이터에서 다시 찾아 헤매지 않게 한다.
+    pr_lastSaved = {
+      info: {
+        reqDate:  reqDate.replace(/-/g, '.'),
+        claimNo:  claimNo,
+        projId:   proj.id,
+        projName: proj.client || '',
+        projCode: proj.code || '',
+        site: site, manager: manager, position: position, phone: phone
+      },
+      items: items.map(it => Object.assign({}, it))
+    };
+
     showToast(items.length + '개 품목 저장 완료', 'success');
     pr_resetForm();
     pr_renderDrafts();
+    pr_showSavedCard();
+    if (andPrint) pr_printSaved();
   } catch(e) {
     // 폼은 일부러 비우지 않는다 — 서버에 안 들어갔으므로 사용자가 다시 저장할 수 있어야 한다
     showToast('⚠️ 서버 저장 실패: ' + e.message + '\n이 브라우저에만 남아 있습니다. 다시 저장해 주세요.', 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '저장'; }
+    if (btn)     { btn.disabled = false; btn.textContent = '✅ 저장하고 인쇄'; }
+    if (btnOnly) { btnOnly.disabled = false; }
     pr_renderDB();
   }
 }
@@ -4617,6 +4637,83 @@ async function pr_saveEntry() {
 /**
  * 폼 초기화
  */
+// 방금 저장한 구매요청 (결과 카드용). 새 요청서를 시작하면 비운다.
+let pr_lastSaved = null;
+
+/** 저장 결과 카드 표시 */
+function pr_showSavedCard() {
+  const card = document.getElementById('pr-saved-card');
+  const sum  = document.getElementById('pr-saved-summary');
+  if (!card || !pr_lastSaved) return;
+  const i = pr_lastSaved.info;
+  sum.textContent = [
+    i.claimNo || '(청구번호 없음)',
+    i.projName || '(프로젝트 미지정)',
+    i.site || '',
+    '품목 ' + pr_lastSaved.items.length + '건'
+  ].filter(Boolean).join(' · ');
+  card.style.display = '';
+}
+
+/** 결과 카드 닫기 — 새 요청서 작성 */
+function pr_dismissSavedCard() {
+  const card = document.getElementById('pr-saved-card');
+  if (card) card.style.display = 'none';
+  pr_lastSaved = null;
+  pr_resetForm();
+}
+
+/**
+ * 방금 저장한 건을 다시 인쇄한다.
+ * 저장 당시의 내용 그대로 찍는다 — 청구번호가 비어 있어도 정확히 그 건만 나온다
+ * (청구번호로 다시 조회하면 번호가 빈 다른 건까지 섞일 수 있다).
+ */
+function pr_printSaved() {
+  if (!pr_lastSaved) { showToast('다시 인쇄할 내용이 없습니다.', 'error'); return; }
+  const html = pr_buildPrintHTML(pr_lastSaved.info, pr_lastSaved.items);
+  const win  = window.open('', '_blank', 'width=900,height=800');
+  if (!win) { showToast('팝업이 차단되었습니다. 브라우저에서 이 사이트의 팝업을 허용해 주세요.', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
+}
+
+/**
+ * 방금 저장한 내용을 그대로 폼에 올려 새 요청서를 만든다.
+ * 청구번호는 프로젝트 기준으로 새로 채번한다 — 같은 소모품을 주기적으로
+ * 다시 청구할 때 품목을 처음부터 다시 치지 않아도 된다.
+ */
+function pr_cloneSaved() {
+  if (!pr_lastSaved) return;
+  const src = pr_lastSaved;
+  pr_dismissSavedCard();
+
+  const sel = document.getElementById('pr-proj-sel');
+  if (sel && src.info.projId !== undefined && src.info.projId !== '') {
+    sel.value = String(src.info.projId);
+    pr_onProjectChange();          // 담당자·현장·전화 자동 채움 + 청구번호 새로 채번
+  }
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+  setVal('pr-site',     src.info.site);
+  setVal('pr-manager',  src.info.manager);
+  setVal('pr-position', src.info.position);
+  setVal('pr-phone',    src.info.phone);
+
+  const tbody = document.getElementById('pr-item-tbody');
+  if (tbody) {
+    tbody.innerHTML = '';
+    src.items.forEach(() => pr_addItemRow());
+    const rows = tbody.querySelectorAll('tr');
+    src.items.forEach((it, i) => {
+      const tr = rows[i]; if (!tr) return;
+      tr.querySelector('.pr-item-name').value = it.itemName || '';
+      tr.querySelector('.pr-item-spec').value = it.itemSpec || '';
+      tr.querySelector('.pr-item-qty').value  = it.itemQty  || '';
+      tr.querySelector('.pr-item-note').value = it.itemNote || '';
+    });
+  }
+  showToast('같은 품목으로 새 요청서를 만들었습니다. 청구번호를 확인하세요.', 'success');
+}
+
 function pr_resetForm() {
   ['pr-proj-sel','pr-req-date','pr-claim-no','pr-site','pr-manager','pr-position','pr-phone'].forEach(id => {
     const el = document.getElementById(id);
@@ -4832,6 +4929,27 @@ function pr_printDraft(id) {
 /**
  * 구매 데이터 테이블 렌더 (서브②)
  */
+/**
+ * 청구건 단위로 묶어 최신 건이 위로 오게 정렬한다.
+ * 서버가 저장 순서(seq)대로 내려주므로, 청구건이 처음 나타난 순서를 뒤집으면
+ * 최신순이 된다. 품목 순서는 청구건 안에서 원래대로 유지한다.
+ * @param {Array} rows
+ * @returns {Array}
+ */
+function _prNewestFirst(rows) {
+  const groups = [];
+  const index  = new Map();
+  rows.forEach(r => {
+    // 청구번호가 비어 있는 옛 데이터는 한 덩어리로 뭉치지 않도록 행마다 따로 둔다
+    const key = r.claim ? 'c:' + r.claim : 'r:' + (r.id || groups.length);
+    if (!index.has(key)) { index.set(key, groups.length); groups.push([]); }
+    groups[index.get(key)].push(r);
+  });
+  const out = [];
+  for (let i = groups.length - 1; i >= 0; i--) out.push(...groups[i]);
+  return out;
+}
+
 function pr_renderDB() {
   const tbody    = document.getElementById('pr-db-tbody');
   const countEl  = document.getElementById('pr-db-count');
@@ -4839,10 +4957,15 @@ function pr_renderDB() {
   if (!tbody) return;
 
   const q = (searchEl?.value || '').toLowerCase();
-  const db = (state.purchaseDB || []).filter(row => {
+  const matched = (state.purchaseDB || []).filter(row => {
     if (!q) return true;
     return (row.projName + row.claim + row.itemName + row.manager + row.site).toLowerCase().includes(q);
   });
+
+  // 최신 청구건이 맨 위로 오게 뒤집는다. 예전엔 배열 순서 그대로 그려서 가장
+  // 최근에 저장한 건이 표 맨 아래에 있었고, 볼 때마다 끝까지 스크롤해야 했다.
+  // 청구건 단위로 묶어 뒤집으므로 한 청구건 안의 품목 순서(1,2,3…)는 그대로다.
+  const db = _prNewestFirst(matched);
 
   // 서버 저장이 확인되지 않은 건이 있으면 건수 옆에 눈에 띄게 표시한다.
   // 이게 없어서, 서버에 안 올라간 줄 모른 채 새로고침하고 데이터를 잃었다.
