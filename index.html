@@ -386,6 +386,20 @@
 
   <!-- ─ 서브①: 요청서 작성 ─ -->
   <div id="pr-panel-input" class="pr-panel active">
+
+    <!-- 저장 직후 결과 카드 — 방금 저장한 건을 놓치지 않도록 남겨둔다.
+         예전엔 저장하면 폼이 즉시 비워져서, 인쇄하려면 구매 데이터에서 다시 찾아야 했다. -->
+    <div class="pr-form-card" id="pr-saved-card" style="display:none;border-color:var(--green);margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="font-size:13px;font-weight:700;color:var(--green);">✅ 저장 완료</div>
+        <div id="pr-saved-summary" style="font-size:12px;color:var(--text2);"></div>
+        <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" onclick="pr_printSaved()">🖨️ 다시 인쇄</button>
+          <button class="btn btn-ghost btn-sm" onclick="pr_cloneSaved()" title="같은 품목으로 새 요청서를 만듭니다 (청구번호는 새로 부여)">📋 이 내용으로 새 요청</button>
+          <button class="btn btn-ghost btn-sm" onclick="pr_dismissSavedCard()">📄 새 요청서 작성</button>
+        </div>
+      </div>
+    </div>
     <div class="pr-form-card">
       <div class="card-title" style="margin-bottom:16px;">📝 구매요청서 작성</div>
 
@@ -456,8 +470,9 @@
         <span id="pr-draft-editing" style="display:none;font-size:11px;color:var(--accent4);margin-right:auto;"></span>
         <button class="btn btn-ghost" onclick="pr_resetForm()">🗑️ 초기화</button>
         <button class="btn btn-ghost" style="color:var(--accent4);border-color:var(--accent4);" onclick="pr_saveDraft()" title="작성 중인 내용을 임시 보관합니다 (인쇄·저장 전)">💾 임시저장</button>
-        <button class="btn btn-primary" onclick="pr_printFromForm()">🖨️ 인쇄 미리보기</button>
-        <button id="pr-save-btn" class="btn btn-success" onclick="pr_saveEntry()">저장</button>
+        <button class="btn btn-ghost" onclick="pr_printFromForm()">👁️ 미리보기</button>
+        <button id="pr-save-only-btn" class="btn btn-ghost" onclick="pr_saveEntry(false)" title="저장만 하고 인쇄창은 띄우지 않습니다">저장만</button>
+        <button id="pr-save-btn" class="btn btn-success" onclick="pr_saveEntry(true)">✅ 저장하고 인쇄</button>
       </div>
 
       <!-- 도움말 (접이식) -->
