@@ -229,6 +229,8 @@ async function _finishInit() {
     renderStats();
     renderDashboard();
     checkAlerts();
+    // 지난번에 서버 저장이 실패했던 구매요청이 있으면 복구만 해두지 말고 바로 올린다
+    if (prPendingCount() > 0 && currentUser?.mdRole !== '열람용') pr_retryPending();
   } else {
     setSyncStatus('idle', '☁️ 서버 저장');
   }
@@ -581,9 +583,24 @@ function _prRestorePending() {
 
   state.purchaseDB = (state.purchaseDB || []).concat(missing);
   console.warn('[pr] 서버에 없는 미동기화 구매요청 ' + missing.length + '건을 로컬에서 복구했습니다.');
-  setTimeout(() => {
-    showToast('서버에 저장되지 않은 구매요청 ' + missing.length + '건을 복구했습니다. 구매요청 탭에서 다시 저장해 주세요.', 'error');
-  }, 1200);
+}
+
+/**
+ * 미저장 구매요청을 서버로 다시 올린다.
+ * 복구만 해놓고 "다시 저장하세요"라고 안내하면 사용자가 누를 버튼이 마땅치 않다
+ * (구매요청 저장 버튼은 새 입력용이다). 로그인 직후 자동으로 한 번 시도하고,
+ * 실패하면 구매 데이터 화면의 경고를 눌러 언제든 다시 시도할 수 있게 한다.
+ */
+async function pr_retryPending() {
+  const n = prPendingCount();
+  if (n === 0) return;
+  try {
+    await saveFieldsToSheet(['purchaseDB']);
+    showToast('서버에 저장되지 않았던 구매요청 ' + n + '건을 서버에 올렸습니다.', 'success');
+  } catch (e) {
+    showToast('⚠️ 미저장 구매요청 ' + n + '건이 아직 서버에 올라가지 않았습니다: ' + e.message, 'error');
+  }
+  if (document.getElementById('pr-db-tbody')) pr_renderDB();
 }
 
 // ── 서버로 저장 ──
@@ -660,6 +677,10 @@ async function _doSaveFields(fields) {
     const json = await res.json();
     if (!json.success) throw new Error(json.error || '저장 실패');
     state._lastSyncTime = new Date().toISOString();
+    // purchaseDB를 보냈다면 그 배열 전체가 서버에 올라간 것이다 — 그 안에 있는
+    // 행은 더 이상 '미저장'이 아니므로 대기열에서 지운다. 이걸 안 하면 서버에
+    // 올라간 뒤에도 경고와 복구 메시지가 계속 떠서 복구가 안 된 것처럼 보인다.
+    if (fields.includes('purchaseDB')) _prClearPending(state.purchaseDB || []);
     setSyncStatus('ok', '서버 저장됨');
   } catch(e) {
     setSyncStatus('error', '저장 실패: ' + e.message);
@@ -4518,8 +4539,7 @@ async function pr_saveEntry() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
 
   try {
-    await saveFieldsToSheet(['purchaseDB', 'purchaseDrafts']);
-    _prClearPending(newRows);
+    await saveFieldsToSheet(['purchaseDB', 'purchaseDrafts']);  // 성공 시 대기열은 여기서 정리된다
     showToast(items.length + '개 품목 저장 완료', 'success');
     pr_resetForm();
     pr_renderDrafts();
@@ -4766,16 +4786,19 @@ function pr_renderDB() {
   // 이게 없어서, 서버에 안 올라간 줄 모른 채 새로고침하고 데이터를 잃었다.
   const pendingN = prPendingCount();
   if (countEl) {
-    countEl.textContent = '총 ' + db.length + '건';
+    countEl.style.color = '';
+    countEl.style.fontWeight = '';
+    countEl.title = '';
     if (pendingN > 0) {
-      countEl.textContent += ' · ⚠️ 서버 미저장 ' + pendingN + '건';
-      countEl.style.color = 'var(--red)';
-      countEl.style.fontWeight = '700';
-      countEl.title = '이 브라우저에만 있는 구매요청입니다. 헤더의 "☁️ 서버 저장"을 눌러 올려주세요.';
+      // 경고를 눌러 바로 재전송할 수 있게 한다 — 안내만 띄우고 누를 곳이 없으면
+      // 사용자는 "복구됐다더니 아무 일도 안 일어난다"고 느낀다
+      countEl.innerHTML = '총 ' + db.length + '건 · ' +
+        '<button class="btn btn-ghost btn-sm" onclick="pr_retryPending()" ' +
+        'style="color:var(--red);font-weight:700;padding:2px 6px;font-size:11px;" ' +
+        'title="이 브라우저에만 있는 구매요청입니다. 눌러서 서버에 올리세요.">' +
+        '⚠️ 서버 미저장 ' + pendingN + '건 — 지금 올리기</button>';
     } else {
-      countEl.style.color = '';
-      countEl.style.fontWeight = '';
-      countEl.title = '';
+      countEl.textContent = '총 ' + db.length + '건';
     }
   }
 
