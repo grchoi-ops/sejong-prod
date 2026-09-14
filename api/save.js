@@ -1,5 +1,6 @@
 // api/save.js - 데이터 저장
 const { createClient } = require('@supabase/supabase-js');
+const { isLive } = require('./_purchase');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -63,7 +64,17 @@ module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST만 허용' });
 
   try {
-    const { employees, projects, dailyData, purchaseDB, purchaseDrafts, mdEntries, dailyReports, overtimeReports, tbmRecords, lastModified, modifiedBy } = req.body;
+    let { employees, projects, dailyData, purchaseDB, purchaseDrafts, mdEntries, dailyReports, overtimeReports, tbmRecords, lastModified, modifiedBy } = req.body;
+
+    // 구매요청이 행 단위 테이블로 넘어간 뒤에는 배열 통째 저장을 받지 않는다.
+    // 캐시된 옛 버전을 띄워둔 브라우저가 오래된 사본으로 최신 기록을 덮어쓰는 것이
+    // 9월 데이터 유실의 원인이었다 — 그 경로를 서버에서 막는다.
+    // 구매요청 저장은 /api/purchase (행 단위 INSERT/DELETE)로만 이루어진다.
+    let purchaseIgnored = false;
+    if (purchaseDB !== undefined && await isLive(supabase)) {
+      purchaseDB = undefined;
+      purchaseIgnored = true;
+    }
 
     // 실질 데이터 변경 시에만 스냅샷 저장.
     // 구매요청(purchaseDB·purchaseDrafts)과 M/D(mdEntries)도 실데이터다. 예전엔
@@ -108,7 +119,12 @@ module.exports = async (req, res) => {
     return res.status(200).json({
       success: true,
       savedAt: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
-      savedCount
+      savedCount,
+      // 옛 버전 브라우저가 구매요청 배열을 통째로 보내온 경우를 눈에 보이게 남긴다
+      purchaseIgnored: purchaseIgnored || undefined,
+      purchaseNote: purchaseIgnored
+        ? '구매요청은 /api/purchase 로만 저장됩니다. 이 요청의 purchaseDB는 무시했습니다 (새로고침 필요).'
+        : undefined
     });
 
   } catch (err) {

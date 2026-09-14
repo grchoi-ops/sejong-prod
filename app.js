@@ -283,17 +283,70 @@ const API_BASE = 'https://sejong-prod.vercel.app';
 // 대기 중이던 필드가 통째로 사라지는 일이 있었다. 이제는 약속 체인으로 줄을 세워
 // 모든 저장이 자기 필드 그대로, 순서대로 실제 전송된다.
 let _syncChain = Promise.resolve();
-const ALL_SYNC_FIELDS = ['employees', 'projects', 'dailyData', 'purchaseDB', 'purchaseDrafts', 'mdEntries', 'dailyReports', 'overtimeReports', 'tbmRecords'];
-const _SYNC_FIELD_DEFAULTS = { purchaseDB: [], purchaseDrafts: [], mdEntries: [], dailyReports: {}, overtimeReports: [], tbmRecords: [] };
+// purchaseDB는 여기에 없다 — 구매요청은 /api/purchase 로 행 단위로 저장한다.
+// 배열을 통째로 보내는 경로가 남아 있으면, 오래된 화면이 최신 기록을 덮어쓰는
+// 사고가 언제든 다시 난다 (2026-09-09 9건 유실).
+const ALL_SYNC_FIELDS = ['employees', 'projects', 'dailyData', 'purchaseDrafts', 'mdEntries', 'dailyReports', 'overtimeReports', 'tbmRecords'];
+const _SYNC_FIELD_DEFAULTS = { purchaseDrafts: [], mdEntries: [], dailyReports: {}, overtimeReports: [], tbmRecords: [] };
 
 // 서버 저장이 확인되지 않은 구매요청 행을 따로 보관하는 localStorage 키.
 // 서버 저장이 실패한 채 새로고침하면 loadFromSheet()가 로컬을 서버 데이터로
 // 덮어써서 방금 입력한 내용이 사라졌다. 이 대기열에 남겨두고 다음 로드 때 되살린다.
 const PR_PENDING_KEY = 'sejong_pr_pending_v1';
 
-/** 구매요청 행 1건을 구분하는 지문 (id가 없는 구조라 내용으로 식별한다) */
+/**
+ * 구매요청 행 1건을 구분하는 지문.
+ * 서버가 준 행에는 id가 있으므로 그걸 쓰고, id가 아직 없는 옛 데이터는
+ * 예전처럼 내용으로 식별한다.
+ */
 function _prRowSig(r) {
+  if (r && r.id) return 'id:' + r.id;
   return [r.ts, r.claim, r.itemNo, r.itemName, r.itemSpec, r.itemQty].join('');
+}
+
+/** 행 단위 저장에 쓸 id — 같은 id로 다시 보내도 서버에서 중복이 생기지 않는다 */
+function _prNewId() {
+  return 'pr_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+}
+
+/** 구매요청 행들을 서버에 추가한다 (내가 넣은 행만 전송 — 남의 행은 건드리지 않는다) */
+async function prInsertItems(rows) {
+  const res = await fetch(API_BASE + '/api/purchase', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      items: rows,
+      modifiedBy: localStorage.getItem('sejong_user_name') || '알 수 없음'
+    })
+  });
+  if (!res.ok) throw new Error('서버 응답 오류 (HTTP ' + res.status + ')');
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || '저장 실패');
+  return json;
+}
+
+/**
+ * 서버에서 구매요청 목록을 다시 읽어 화면 데이터를 맞춘다.
+ * 저장·삭제 직후에 부르면 그 사이 다른 사람이 올린 행도 함께 보인다.
+ * 아직 서버에 못 올린 내 행(대기열)은 _prRestorePending()이 도로 붙여준다.
+ */
+async function prReloadItems() {
+  const res = await fetch(API_BASE + '/api/purchase');
+  if (!res.ok) throw new Error('서버 응답 오류 (HTTP ' + res.status + ')');
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || '조회 실패');
+  state.purchaseDB = json.items || [];
+  _prRestorePending();
+  saveLocal();
+}
+
+/** 구매요청 행 1건을 서버에서 삭제한다 */
+async function prDeleteItem(id) {
+  const res = await fetch(API_BASE + '/api/purchase?id=' + encodeURIComponent(id), { method: 'DELETE' });
+  if (!res.ok) throw new Error('서버 응답 오류 (HTTP ' + res.status + ')');
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || '삭제 실패');
+  return json;
 }
 
 function _prLoadPending() {
@@ -595,7 +648,13 @@ async function pr_retryPending() {
   const n = prPendingCount();
   if (n === 0) return;
   try {
-    await saveFieldsToSheet(['purchaseDB']);
+    // 대기열에 남은 행만 다시 넣는다. 같은 id로 다시 보내도 서버가 중복을
+    // 만들지 않으므로 몇 번을 눌러도 안전하다.
+    const pending = _prLoadPending();
+    const rows = pending.map(r => Object.assign({ id: _prNewId() }, r));
+    await prInsertItems(rows);
+    _prClearPending(pending);
+    await prReloadItems().catch(() => {});
     showToast('서버에 저장되지 않았던 구매요청 ' + n + '건을 서버에 올렸습니다.', 'success');
   } catch (e) {
     showToast('⚠️ 미저장 구매요청 ' + n + '건이 아직 서버에 올라가지 않았습니다: ' + e.message, 'error');
@@ -677,10 +736,6 @@ async function _doSaveFields(fields) {
     const json = await res.json();
     if (!json.success) throw new Error(json.error || '저장 실패');
     state._lastSyncTime = new Date().toISOString();
-    // purchaseDB를 보냈다면 그 배열 전체가 서버에 올라간 것이다 — 그 안에 있는
-    // 행은 더 이상 '미저장'이 아니므로 대기열에서 지운다. 이걸 안 하면 서버에
-    // 올라간 뒤에도 경고와 복구 메시지가 계속 떠서 복구가 안 된 것처럼 보인다.
-    if (fields.includes('purchaseDB')) _prClearPending(state.purchaseDB || []);
     setSyncStatus('ok', '서버 저장됨');
   } catch(e) {
     setSyncStatus('error', '저장 실패: ' + e.message);
@@ -732,7 +787,7 @@ async function manualSync() {
     const d = (json && json.success && json.data) ? json.data : null;
     if (d) {
       const byId = r => String(r && r.id);
-      state.purchaseDB      = _unionRows(state.purchaseDB,      d.purchaseDB,      _prRowSig);
+      // 구매요청은 /api/purchase 가 원본이라 여기서 합치거나 보내지 않는다
       state.purchaseDrafts  = _unionRows(state.purchaseDrafts,  d.purchaseDrafts,  byId);
       state.mdEntries       = _unionRows(state.mdEntries,       d.mdEntries,       byId);
       state.overtimeReports = _unionRows(state.overtimeReports, d.overtimeReports, byId);
@@ -4511,6 +4566,7 @@ async function pr_saveEntry() {
     .replace(/\//g, '-').replace(' ', ' ').replace(/\./g, '-').replace(/ -$/, '');
 
   const newRows = items.map(item => ({
+    id:       _prNewId(),        // 재전송해도 서버에서 중복이 생기지 않게 미리 부여
     ts:       now,
     claim:    claimNo,
     date:     reqDate.replace(/-/g, '.'),
@@ -4539,7 +4595,13 @@ async function pr_saveEntry() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중...'; }
 
   try {
-    await saveFieldsToSheet(['purchaseDB', 'purchaseDrafts']);  // 성공 시 대기열은 여기서 정리된다
+    // 새로 입력한 행만 보낸다. 배열 전체를 덮어쓰지 않으므로 같은 순간 다른 사람이
+    // 저장한 구매요청이 사라질 일이 없다.
+    await prInsertItems(newRows);
+    _prClearPending(newRows);
+    // 그 사이 다른 사람이 올린 행까지 반영해 목록을 맞춘다 (실패해도 저장은 끝난 것)
+    await prReloadItems().catch(() => {});
+    if (pr_currentDraftId) await saveFieldsToSheet(['purchaseDrafts']).catch(() => {});
     showToast(items.length + '개 품목 저장 완료', 'success');
     pr_resetForm();
     pr_renderDrafts();
@@ -4875,16 +4937,35 @@ function pr_viewEntry(claimNo) {
 
 function pr_deleteRow(idx) {
   if (!confirm('이 항목을 삭제하시겠습니까?')) return;
+  const row = state.purchaseDB[idx];
+  if (!row) return;
   const removed = state.purchaseDB.splice(idx, 1);
   // 삭제한 행이 미동기화 대기열에 남아 있으면 함께 지운다 — 안 그러면
   // 다음 로드 때 _prRestorePending()이 되살린다.
   _prClearPending(removed);
   saveState();
   pr_renderDB();
-  // 예전엔 로컬에서만 지워서, 새로고침하면 서버 데이터로 되살아났다.
-  saveFieldsToSheet(['purchaseDB'])
-    .then(() => showToast('삭제 완료', 'success'))
-    .catch(e => showToast('⚠️ 삭제가 서버에 반영되지 않았습니다: ' + e.message, 'error'));
+
+  // 그 행 하나만 지운다. 예전엔 배열 전체를 다시 올려서, 지우는 김에 남의
+  // 최신 행까지 같이 날려버릴 수 있었다.
+  if (!row.id) {
+    showToast('아직 서버에 올라가지 않은 행이라 로컬에서만 지웠습니다.', 'success');
+    return;
+  }
+  prDeleteItem(row.id)
+    .then(async () => {
+      await prReloadItems().catch(() => {});
+      pr_renderDB();
+      showToast('삭제 완료', 'success');
+    })
+    .catch(e => {
+      // 서버에서 못 지웠으면 화면에서도 되살려 둔다 — 지워진 줄 알았다가
+      // 새로고침하면 되살아나는 혼란을 막는다.
+      state.purchaseDB.splice(idx, 0, row);
+      saveState();
+      pr_renderDB();
+      showToast('⚠️ 삭제가 서버에 반영되지 않았습니다: ' + e.message, 'error');
+    });
 }
 
 /**
