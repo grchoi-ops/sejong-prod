@@ -4929,148 +4929,241 @@ function pr_printDraft(id) {
 /**
  * 구매 데이터 테이블 렌더 (서브②)
  */
-/**
- * 청구건 단위로 묶어 최신 건이 위로 오게 정렬한다.
- * 서버가 저장 순서(seq)대로 내려주므로, 청구건이 처음 나타난 순서를 뒤집으면
- * 최신순이 된다. 품목 순서는 청구건 안에서 원래대로 유지한다.
- * @param {Array} rows
- * @returns {Array}
- */
-function _prNewestFirst(rows) {
-  const groups = [];
-  const index  = new Map();
-  rows.forEach(r => {
-    // 청구번호가 비어 있는 옛 데이터는 한 덩어리로 뭉치지 않도록 행마다 따로 둔다
-    const key = r.claim ? 'c:' + r.claim : 'r:' + (r.id || groups.length);
-    if (!index.has(key)) { index.set(key, groups.length); groups.push([]); }
-    groups[index.get(key)].push(r);
-  });
-  const out = [];
-  for (let i = groups.length - 1; i >= 0; i--) out.push(...groups[i]);
-  return out;
+
+// ── 구매 데이터 화면 상태 ──
+const PR_DB_PAGE = 30;                 // 한 번에 보여줄 청구건 수
+let pr_dbExpanded = new Set();         // 펼쳐 놓은 청구건
+let pr_dbLimit    = PR_DB_PAGE;
+
+/** 'YYYY.MM.DD' 문자열과 비교할 기준일을 같은 형식으로 만든다 */
+function _prDateFloor(period) {
+  const d = new Date();
+  if      (period === '1m')   d.setMonth(d.getMonth() - 1);
+  else if (period === '3m')   d.setMonth(d.getMonth() - 3);
+  else if (period === 'year') { d.setMonth(0); d.setDate(1); }
+  else return null;                    // 'all'
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '.' + p(d.getMonth() + 1) + '.' + p(d.getDate());
 }
 
-function pr_renderDB() {
-  const tbody    = document.getElementById('pr-db-tbody');
-  const countEl  = document.getElementById('pr-db-count');
-  const searchEl = document.getElementById('pr-db-search');
-  if (!tbody) return;
+/** 한 행이 검색어에 걸리는지 */
+function _prMatches(row, q) {
+  if (!q) return true;
+  return [row.projName, row.claim, row.itemName, row.itemSpec, row.manager, row.site, row.itemNote]
+    .join(' ').toLowerCase().includes(q);
+}
 
-  const q = (searchEl?.value || '').toLowerCase();
-  const matched = (state.purchaseDB || []).filter(row => {
-    if (!q) return true;
-    return (row.projName + row.claim + row.itemName + row.manager + row.site).toLowerCase().includes(q);
+/** 청구건 묶음 키 — 청구번호가 없는 옛 행은 각자 한 건으로 둔다 */
+function _prGroupKey(r) {
+  return r.claim ? 'c:' + r.claim : 'r:' + (r.id || (r.ts + r.itemName));
+}
+
+function _prEsc(v) {
+  return String(v === undefined || v === null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function _prAttr(v) { return _prEsc(v).replace(/"/g, '&quot;'); }
+
+/** 검색어에 걸린 부분을 강조 */
+function _prHighlight(text, q) {
+  const t = _prEsc(text);
+  if (!q) return t;
+  const i = t.toLowerCase().indexOf(q);
+  if (i < 0) return t;
+  return t.slice(0, i) + '<mark style="background:var(--yellow);color:#000;padding:0 1px;">' +
+         t.slice(i, i + q.length) + '</mark>' + t.slice(i + q.length);
+}
+
+/**
+ * 필터를 적용해 청구건 단위로 묶는다. 최신 청구건이 앞에 온다.
+ * 검색 중에는 기간 필터를 자동으로 푼다 — 찾는 물건이 기본 기간(최근 3개월)
+ * 밖에 있으면 검색이 무용지물이 되기 때문.
+ */
+function _prBuildGroups() {
+  const q       = (document.getElementById('pr-db-search')?.value || '').trim().toLowerCase();
+  const period  = document.getElementById('pr-db-period')?.value  || '3m';
+  const project = document.getElementById('pr-db-project')?.value || '';
+  const floor   = q ? null : _prDateFloor(period);
+
+  const groups = [];
+  const index  = new Map();
+  (state.purchaseDB || []).forEach(r => {
+    if (project && (r.projName || '') !== project) return;
+    if (floor && (r.date || '') < floor) return;
+    const key = _prGroupKey(r);
+    if (!index.has(key)) {
+      index.set(key, groups.length);
+      groups.push({ key: key, claim: r.claim || '', date: r.date || '', projName: r.projName || '',
+                    site: r.site || '', manager: r.manager || '', rows: [], hit: false });
+    }
+    const g = groups[index.get(key)];
+    g.rows.push(r);
+    if (q && _prMatches(r, q)) g.hit = true;
   });
 
-  // 최신 청구건이 맨 위로 오게 뒤집는다. 예전엔 배열 순서 그대로 그려서 가장
-  // 최근에 저장한 건이 표 맨 아래에 있었고, 볼 때마다 끝까지 스크롤해야 했다.
-  // 청구건 단위로 묶어 뒤집으므로 한 청구건 안의 품목 순서(1,2,3…)는 그대로다.
-  const db = _prNewestFirst(matched);
+  groups.reverse();                                  // 최신 청구건이 위로
+  return { groups: q ? groups.filter(g => g.hit) : groups, q: q, searching: !!q };
+}
 
-  // 서버 저장이 확인되지 않은 건이 있으면 건수 옆에 눈에 띄게 표시한다.
-  // 이게 없어서, 서버에 안 올라간 줄 모른 채 새로고침하고 데이터를 잃었다.
+/** 프로젝트 드롭다운 채우기 (선택값 유지) */
+function _prFillProjectFilter() {
+  const sel = document.getElementById('pr-db-project');
+  if (!sel) return;
+  const names = [...new Set((state.purchaseDB || []).map(r => r.projName).filter(Boolean))].sort();
+  const keep = sel.value;
+  sel.innerHTML = '<option value="">전체 프로젝트</option>' +
+    names.map(n => '<option value="' + _prAttr(n) + '">' + _prEsc(n) + '</option>').join('');
+  if (names.indexOf(keep) >= 0) sel.value = keep;
+}
+
+/** 필터가 바뀌면 처음부터 다시 — 보던 페이지 수를 끌고 가지 않는다 */
+function pr_onDbFilterChange() {
+  pr_dbLimit = PR_DB_PAGE;
+  pr_renderDB();
+}
+
+function pr_dbMore() {
+  pr_dbLimit += PR_DB_PAGE;
+  pr_renderDB();
+}
+
+/** 청구건 펼치기/접기 */
+function pr_dbToggle(key) {
+  if (pr_dbExpanded.has(key)) pr_dbExpanded.delete(key);
+  else                        pr_dbExpanded.add(key);
+  pr_renderDB();
+}
+
+/** 화면에 보이는 청구건 전부 펼치기 / 접기 */
+function pr_dbToggleAll() {
+  const shown = _prBuildGroups().groups.slice(0, pr_dbLimit);
+  const allOpen = shown.length > 0 && shown.every(g => pr_dbExpanded.has(g.key));
+  if (allOpen) shown.forEach(g => pr_dbExpanded.delete(g.key));
+  else         shown.forEach(g => pr_dbExpanded.add(g.key));
+  pr_renderDB();
+}
+
+/**
+ * 구매 데이터 테이블 렌더 (서브②)
+ * 청구건 단위로 접어서 보여준다. 품목을 전부 펼쳐 놓으면 200행이 넘어
+ * 최근 건을 보려면 끝까지 스크롤해야 했다.
+ */
+function pr_renderDB() {
+  const tbody   = document.getElementById('pr-db-tbody');
+  const countEl = document.getElementById('pr-db-count');
+  const moreEl  = document.getElementById('pr-db-more');
+  if (!tbody) return;
+
+  _prFillProjectFilter();
+  const built     = _prBuildGroups();
+  const groups    = built.groups;
+  const q         = built.q;
+  const searching = built.searching;
+  const shown     = groups.slice(0, pr_dbLimit);
+  const itemCount = groups.reduce((n, g) => n + g.rows.length, 0);
+
+  // ── 건수 + 미저장 경고 ──
   const pendingN = prPendingCount();
   if (countEl) {
-    countEl.style.color = '';
-    countEl.style.fontWeight = '';
-    countEl.title = '';
+    const base = '청구 ' + groups.length + '건 · 품목 ' + itemCount + '개' +
+                 (searching ? ' (검색 결과 · 전 기간)' : '');
     if (pendingN > 0) {
-      // 경고를 눌러 바로 재전송할 수 있게 한다 — 안내만 띄우고 누를 곳이 없으면
-      // 사용자는 "복구됐다더니 아무 일도 안 일어난다"고 느낀다
-      countEl.innerHTML = '총 ' + db.length + '건 · ' +
+      countEl.innerHTML = _prEsc(base) + ' · ' +
         '<button class="btn btn-ghost btn-sm" onclick="pr_retryPending()" ' +
         'style="color:var(--red);font-weight:700;padding:2px 6px;font-size:11px;" ' +
         'title="이 브라우저에만 있는 구매요청입니다. 눌러서 서버에 올리세요.">' +
         '⚠️ 서버 미저장 ' + pendingN + '건 — 지금 올리기</button>';
     } else {
-      countEl.textContent = '총 ' + db.length + '건';
+      countEl.textContent = base;
     }
   }
 
-  if (db.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text3);padding:24px;">저장된 구매요청 데이터가 없습니다.</td></tr>';
+  const toggleAllBtn = document.getElementById('pr-db-toggle-all');
+  if (toggleAllBtn) {
+    const allOpen = shown.length > 0 && shown.every(g => pr_dbExpanded.has(g.key));
+    toggleAllBtn.textContent = allOpen ? '전체 접기' : '전체 펼치기';
+  }
+
+  if (groups.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:24px;">' +
+      (searching ? '검색 결과가 없습니다.' : '이 조건에 해당하는 구매요청이 없습니다. 기간을 넓혀 보세요.') +
+      '</td></tr>';
+    if (moreEl) moreEl.innerHTML = '';
     return;
   }
 
-  // [단계12] 같은 청구번호 중 첫 번째 행 추적
-  const seenClaims = new Set();
+  const html = [];
+  shown.forEach(g => {
+    const open = searching || pr_dbExpanded.has(g.key);   // 검색 중에는 걸린 건을 자동으로 펼친다
+    const k    = encodeURIComponent(g.key);
+    html.push(
+      '<tr style="cursor:pointer;" onclick="pr_dbToggle(decodeURIComponent(this.dataset.k))" data-k="' + k + '">' +
+        '<td style="text-align:center;color:var(--text3);">' + (open ? '&#9662;' : '&#9656;') + '</td>' +
+        '<td style="white-space:nowrap;">' + _prEsc(g.date) + '</td>' +
+        '<td style="font-family:var(--mono);font-size:11px;color:var(--accent4);">' +
+          (g.claim ? _prHighlight(g.claim, q) : '<span style="color:var(--text3)">(번호 없음)</span>') + '</td>' +
+        '<td style="font-weight:600;">' + _prHighlight(g.projName, q) + '</td>' +
+        '<td style="color:var(--text2)">' + _prEsc(g.site) + '</td>' +
+        '<td style="color:var(--text2)">' + _prEsc(g.manager) + '</td>' +
+        '<td style="text-align:center;font-family:var(--mono);color:var(--accent2);">' + g.rows.length + '개</td>' +
+        '<td style="white-space:nowrap;" onclick="event.stopPropagation()">' +
+          '<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:11px;" ' +
+            'onclick="pr_viewEntryByKey(decodeURIComponent(this.dataset.k))" data-k="' + k + '" ' +
+            'title="이 청구건 전체 인쇄">🖨️</button> ' +
+          '<button class="btn btn-ghost btn-sm" style="color:var(--red);padding:2px 6px;font-size:10px;" ' +
+            'onclick="pr_deleteClaim(decodeURIComponent(this.dataset.k))" data-k="' + k + '" ' +
+            'title="이 청구건 전체 삭제">전체삭제</button>' +
+        '</td>' +
+      '</tr>');
 
-  tbody.innerHTML = db.map((row, i) => {
-    const actualIdx = state.purchaseDB.indexOf(row);
-    const isFirstOfClaim = row.claim && !seenClaims.has(row.claim);
-    if (row.claim) seenClaims.add(row.claim);
-    const safeClaimAttr = encodeURIComponent(row.claim || '');
-    return '<tr>' +
-      '<td style=\"font-size:10px;color:var(--text3);white-space:nowrap;\">' + (row.ts || '') + '</td>' +
-      '<td style=\"font-family:var(--mono);font-size:11px;color:var(--accent4);\">' + (row.claim || '') + '</td>' +
-      '<td style=\"font-size:11px;white-space:nowrap;\">' + (row.date || '') + '</td>' +
-      '<td style=\"font-weight:600;\">' + (row.projName || '') + '</td>' +
-      '<td style=\"color:var(--text2)\">' + (row.site || '') + '</td>' +
-      '<td style=\"font-weight:500;\">' + (row.itemName || '') + '</td>' +
-      '<td style=\"color:var(--text2);font-size:11px;\">' + (row.itemSpec || '') + '</td>' +
-      '<td style=\"text-align:center;font-family:var(--mono);color:var(--accent2);\">' + (row.itemQty || '') + '</td>' +
-      '<td style=\"color:var(--text2)\">' + (row.manager || '') + '</td>' +
-      '<td style=\"color:var(--text3);font-size:11px;\">' + (row.itemNote || '') + '</td>' +
-      '<td style=\"white-space:nowrap;\">' +
-        (isFirstOfClaim ? '<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:11px;margin-right:4px;" onclick="pr_viewEntry(decodeURIComponent(this.dataset.claim))" data-claim="' + safeClaimAttr + '" title="해당 청구건 전체 재인쇄">🖨️</button>' : '') +
-        '<button class=\"btn btn-ghost btn-sm\" style=\"color:var(--red);padding:2px 6px;font-size:10px;\" onclick=\"pr_deleteRow(' + actualIdx + ')\">삭제</button>' +
-      '</td>' +
-      '</tr>';
-  }).join('');
+    if (!open) return;
+    g.rows.forEach(r => {
+      const dim = (q && !_prMatches(r, q)) ? 'opacity:.45;' : '';
+      html.push(
+        '<tr style="background:var(--surface2);' + dim + '">' +
+          '<td></td>' +
+          '<td colspan="7" style="padding:4px 10px;">' +
+            '<div style="display:flex;align-items:center;gap:10px;font-size:12px;">' +
+              '<span style="font-weight:500;min-width:180px;">' + _prHighlight(r.itemName, q) + '</span>' +
+              '<span style="color:var(--text2);min-width:130px;">' + _prHighlight(r.itemSpec, q) + '</span>' +
+              '<span style="font-family:var(--mono);color:var(--accent2);min-width:60px;">' + _prEsc(r.itemQty) + '</span>' +
+              '<span style="color:var(--text3);flex:1;">' + _prEsc(r.itemNote) + '</span>' +
+              '<button class="btn btn-ghost btn-sm" style="color:var(--red);padding:2px 6px;font-size:10px;" ' +
+                'onclick="pr_deleteRow(decodeURIComponent(this.dataset.id))" data-id="' +
+                encodeURIComponent(r.id || '') + '">삭제</button>' +
+            '</div>' +
+          '</td>' +
+        '</tr>');
+    });
+  });
+  tbody.innerHTML = html.join('');
+
+  if (moreEl) {
+    const rest = groups.length - shown.length;
+    moreEl.innerHTML = rest > 0
+      ? '<button class="btn btn-ghost" onclick="pr_dbMore()">더 보기 (' + rest + '건 남음)</button>'
+      : '';
+  }
 }
 
 /**
- * 특정 DB 행 삭제
- * @param {number} idx - state.purchaseDB 인덱스
+ * 품목 행 1건 삭제.
+ * 예전엔 배열 인덱스를 버튼에 박아 두고 눌렀을 때 그 인덱스로 배열을 다시
+ * 찾았다. 저장·삭제 뒤 prReloadItems()가 배열을 통째로 갈아끼우기 때문에,
+ * 다시 그리기 전에 누르면 엉뚱한 행이 지워질 수 있었다. 이제 id로 찾는다.
+ * @param {string} id
  */
-/**
- * [단계12] 청구번호 기준으로 해당 건 전체를 모아 인쇄 팝업 표시
- * @param {string} claimNo - 청구번호
- */
-function pr_viewEntry(claimNo) {
-  const entries = (state.purchaseDB || []).filter(r => r.claim === claimNo);
-  if (entries.length === 0) { showToast('해당 청구번호 데이터가 없습니다.', 'error'); return; }
-
-  const first = entries[0];
-  const info = {
-    reqDate:  first.date  || '',
-    claimNo:  first.claim || '',
-    projName: first.projName || '',
-    projCode: first.projCode || '',
-    site:     first.site    || '',
-    manager:  first.manager || '',
-    position: first.position || '',
-    phone:    first.phone   || ''
-  };
-
-  const items = entries.map((r, i) => ({
-    itemNo:   r.itemNo   || (i + 1),
-    itemName: r.itemName || '',
-    itemSpec: r.itemSpec || '',
-    itemQty:  r.itemQty  || '',
-    itemNote: r.itemNote || ''
-  }));
-
-  const html = pr_buildPrintHTML(info, items);
-  const win  = window.open('', '_blank', 'width=900,height=800');
-  if (!win) { showToast('팝업이 차단되었습니다.', 'error'); return; }
-  win.document.write(html);
-  win.document.close();
-}
-
-function pr_deleteRow(idx) {
-  if (!confirm('이 항목을 삭제하시겠습니까?')) return;
+function pr_deleteRow(id) {
+  const idx = (state.purchaseDB || []).findIndex(r => r.id === id);
+  if (idx < 0) { showToast('이미 지워진 항목입니다. 목록을 새로 불러옵니다.', 'error'); pr_renderDB(); return; }
   const row = state.purchaseDB[idx];
-  if (!row) return;
-  const removed = state.purchaseDB.splice(idx, 1);
-  // 삭제한 행이 미동기화 대기열에 남아 있으면 함께 지운다 — 안 그러면
-  // 다음 로드 때 _prRestorePending()이 되살린다.
-  _prClearPending(removed);
+  if (!confirm('이 품목을 삭제하시겠습니까?\n\n' + (row.itemName || '') + ' ' + (row.itemSpec || ''))) return;
+
+  state.purchaseDB.splice(idx, 1);
+  _prClearPending([row]);
   saveState();
   pr_renderDB();
 
-  // 그 행 하나만 지운다. 예전엔 배열 전체를 다시 올려서, 지우는 김에 남의
-  // 최신 행까지 같이 날려버릴 수 있었다.
   if (!row.id) {
     showToast('아직 서버에 올라가지 않은 행이라 로컬에서만 지웠습니다.', 'success');
     return;
@@ -5089,6 +5182,67 @@ function pr_deleteRow(idx) {
       pr_renderDB();
       showToast('⚠️ 삭제가 서버에 반영되지 않았습니다: ' + e.message, 'error');
     });
+}
+
+/** 묶음 키로 해당 청구건의 행들을 모은다 */
+function _prRowsOfKey(key) {
+  return (state.purchaseDB || []).filter(r => _prGroupKey(r) === key);
+}
+
+/** 청구건 단위 인쇄 — 표의 🖨️ 버튼 */
+function pr_viewEntryByKey(key) {
+  const entries = _prRowsOfKey(key);
+  if (entries.length === 0) { showToast('해당 청구건 데이터가 없습니다.', 'error'); return; }
+  const first = entries[0];
+  const info = {
+    reqDate:  first.date  || '',
+    claimNo:  first.claim || '',
+    projName: first.projName || '',
+    projCode: first.projCode || '',
+    site:     first.site    || '',
+    manager:  first.manager || '',
+    position: first.position || '',
+    phone:    first.phone   || ''
+  };
+  const items = entries.map((r, i) => ({
+    itemNo:   r.itemNo   || (i + 1),
+    itemName: r.itemName || '',
+    itemSpec: r.itemSpec || '',
+    itemQty:  r.itemQty  || '',
+    itemNote: r.itemNote || ''
+  }));
+  const html = pr_buildPrintHTML(info, items);
+  const win  = window.open('', '_blank', 'width=900,height=800');
+  if (!win) { showToast('팝업이 차단되었습니다.', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
+}
+
+/**
+ * 청구건 전체 삭제.
+ * 한 행씩 서버에서 지운다. 중간에 실패하면 거기서 멈추고, 서버에서 목록을
+ * 다시 읽어 실제로 몇 건이 지워졌는지 그대로 보여준다 — 일부만 지워진 채
+ * 화면과 서버가 어긋나 있는 상태를 숨기지 않기 위함.
+ */
+async function pr_deleteClaim(key) {
+  const rows = _prRowsOfKey(key);
+  if (rows.length === 0) return;
+  const label = rows[0].claim || '(번호 없음)';
+  if (!confirm('청구건 「' + label + '」 을(를) 통째로 삭제합니다.\n품목 ' + rows.length + '건이 모두 사라집니다.\n\n계속하시겠습니까?')) return;
+
+  let done = 0, failed = null;
+  for (const r of rows) {
+    if (!r.id) { _prClearPending([r]); done++; continue; }
+    try { await prDeleteItem(r.id); done++; }
+    catch (e) { failed = e; break; }
+  }
+  _prClearPending(rows.slice(0, done));
+  await prReloadItems().catch(() => {});
+  pr_dbExpanded.delete(key);
+  pr_renderDB();
+
+  if (failed) showToast('⚠️ ' + done + '건만 삭제되고 중단됐습니다: ' + failed.message, 'error');
+  else        showToast('청구건 ' + label + ' — 품목 ' + done + '건 삭제 완료', 'success');
 }
 
 /**

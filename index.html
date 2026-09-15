@@ -517,32 +517,45 @@
 
   <!-- ─ 서브②: 구매 데이터 ─ -->
   <div id="pr-panel-db" class="pr-panel">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-      <div class="card-title">📋 구매 이력</div>
-      <input type="text" id="pr-db-search" placeholder="검색 (프로젝트, 품목, 담당자...)"
-        class="pr-input" style="max-width:260px;" oninput="pr_renderDB()">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+      <div class="card-title" style="margin:0;">📋 구매 이력</div>
+
+      <!-- 기간·프로젝트로 먼저 좁힌다. 품목이 쌓일수록 전체를 훑는 건 의미가 없다. -->
+      <select id="pr-db-period" class="pr-input" style="max-width:130px;" onchange="pr_onDbFilterChange()">
+        <option value="1m">최근 1개월</option>
+        <option value="3m" selected>최근 3개월</option>
+        <option value="year">올해</option>
+        <option value="all">전체 기간</option>
+      </select>
+      <select id="pr-db-project" class="pr-input" style="max-width:170px;" onchange="pr_onDbFilterChange()">
+        <option value="">전체 프로젝트</option>
+      </select>
+      <input type="text" id="pr-db-search" placeholder="품목·청구번호·담당자 검색"
+        class="pr-input" style="max-width:220px;" oninput="pr_onDbFilterChange()">
+      <button class="btn btn-ghost btn-sm" onclick="pr_dbToggleAll()" id="pr-db-toggle-all">전체 펼치기</button>
+
       <div style="margin-left:auto;font-size:12px;color:var(--text3);" id="pr-db-count"></div>
     </div>
-    <div style="overflow-x:auto;">
+
+    <div style="overflow:auto;max-height:65vh;border:1px solid var(--border);border-radius:6px;">
       <table class="pr-db-table">
         <thead>
           <tr>
-            <th>저장일시</th>
-            <th>청구번호</th>
-            <th>요청일</th>
+            <th style="width:30px;"></th>
+            <th style="width:90px;">요청일</th>
+            <th style="width:150px;">청구번호</th>
             <th>프로젝트</th>
-            <th>현장</th>
-            <th>품목명</th>
-            <th>규격</th>
-            <th>수량</th>
-            <th>담당자</th>
-            <th>비고</th>
-            <th></th>
+            <th style="width:110px;">현장</th>
+            <th style="width:90px;">담당자</th>
+            <th style="width:70px;">품목</th>
+            <th style="width:110px;">작업</th>
           </tr>
         </thead>
         <tbody id="pr-db-tbody"></tbody>
       </table>
     </div>
+
+    <div id="pr-db-more" style="text-align:center;margin-top:12px;"></div>
   </div>
 
   <!-- ─ 서브③: 현황판 ─ -->
