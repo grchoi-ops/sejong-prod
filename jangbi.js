@@ -452,12 +452,20 @@ function adminDashboard(){
   </div>`;
 }
 
+/* ── 목록 구분 (실제 / 인증용 / 공통) ── */
+// listGroup 미지정 장비는 '실제'로 간주. '공통'은 두 목록 모두에 포함.
+const LIST_GROUPS = {real:'실제 장비', cert:'인증용', both:'공통 (실제+인증용)'};
+const listGroupOf = e => LIST_GROUPS[e.listGroup] ? e.listGroup : 'real';
+const inListGroup = (e, g) => { const x = listGroupOf(e); return x==='both' || x===g; };
+const listGroupSelect = (cur, cls) => `<select name="listGroup" class="${cls}">${Object.entries(LIST_GROUPS).map(([v,l])=>`<option value="${v}" ${cur===v?'selected':''}>${l}</option>`).join('')}</select>`;
+
 /* ── 장비 목록 ── */
 route('#/equipment', ()=>{
   const params = new URLSearchParams(_jbPath.split('?')[1]||'');
   const filterStatus = params.get('status')||'';
   const filterCat = params.get('cat')||'';
   const filterMob = params.get('mob')||'';
+  const filterGrp = params.get('grp')||'';
   const q0 = params.get('q')||'';
   const updateHash = (k,v)=>{
     const p = new URLSearchParams(_jbPath.split('?')[1]||'');
@@ -485,8 +493,16 @@ route('#/equipment', ()=>{
     if(fs) fs.onchange = e=>updateHash('status', e.target.value);
     if(fc) fc.onchange = e=>updateHash('cat', e.target.value);
     if(fm) fm.onchange = e=>updateHash('mob', e.target.value);
-    window.printEquipmentList = ()=>{
-      const rows = list.map(e=>{
+    const fg = document.getElementById('f-grp');
+    if(fg) fg.onchange = e=>updateHash('grp', e.target.value);
+    // group 지정 시 화면 필터와 무관하게 해당 구분 전체를 인쇄, 미지정 시 현재 화면 목록 인쇄
+    window.printEquipmentList = (group)=>{
+      const menu = document.getElementById('print-menu'); if(menu) menu.open = false;
+      const printList = group
+        ? Store.equipment.filter(e=>inListGroup(e, group)).sort((a,b)=>a.id.localeCompare(b.id))
+        : list;
+      const title = group==='cert' ? '인증용 장비 목록' : group==='real' ? '실제 장비 목록' : '장비 목록';
+      const rows = printList.map(e=>{
         const site = Store.getById('sites', e.currentSiteId);
         const holder = e.currentHolderId||'';
         const loc = e.status==='출장중'?[site?.name,holder].filter(Boolean).join(' / ')||'-':'-';
@@ -501,7 +517,7 @@ route('#/equipment', ()=>{
           <td>${fmt(e.nextInspectionDate)||'-'}</td>
         </tr>`;
       }).join('');
-      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>장비목록</title>
+      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
       <style>
         @page{size:A4 landscape;margin:12mm}
         body{font-family:'Malgun Gothic',sans-serif;font-size:11px;color:#000}
@@ -512,7 +528,7 @@ route('#/equipment', ()=>{
         th{background:#e8e8e8;font-weight:bold}
         tr:nth-child(even) td{background:#f8f8f8}
       </style></head><body>
-        <h2>장비 목록 (${list.length}건)</h2>
+        <h2>${title} (${printList.length}건)</h2>
         <p>출력일: ${todayISO()}</p>
         <table><thead><tr><th>장비명</th><th>장비관리번호</th><th>카테고리</th><th>상태</th><th>현재위치/소지자</th><th>최근점검</th><th>점검예정일</th></tr></thead>
         <tbody>${rows}</tbody></table>
@@ -527,6 +543,7 @@ route('#/equipment', ()=>{
   if(filterStatus) list = list.filter(e=>e.status===filterStatus);
   if(filterCat) list = list.filter(e=>e.category===filterCat);
   if(filterMob) list = list.filter(e=>(e.mobility||'portable')===filterMob);
+  if(filterGrp) list = list.filter(e=>inListGroup(e, filterGrp));
   if(q0){ const qq = q0.toLowerCase(); list = list.filter(e=>JSON.stringify(e).toLowerCase().includes(qq)); }
   const cats = [...new Set(Store.equipment.map(e=>e.category).filter(Boolean))];
 
@@ -538,7 +555,14 @@ route('#/equipment', ()=>{
         <a href="#/equipment/new" class="bg-slate-900 text-white px-4 py-2 rounded-lg">+ 신규 등록</a>
         <a href="#/equipment/bulk" class="bg-emerald-600 text-white px-4 py-2 rounded-lg">+ 일괄 등록</a>
         <a href="#/qr-print" class="bg-amber-500 text-white px-4 py-2 rounded-lg">🏷 라벨 인쇄</a>
-        <button onclick="printEquipmentList()" class="bg-slate-600 text-white px-4 py-2 rounded-lg">🖨 목록 인쇄</button>
+        <details id="print-menu" class="relative">
+          <summary class="bg-slate-600 text-white px-4 py-2 rounded-lg cursor-pointer list-none">🖨 목록 인쇄 ▾</summary>
+          <div class="absolute left-0 md:left-auto md:right-0 mt-1 z-10 bg-white text-slate-800 border rounded-lg shadow-lg py-1 min-w-[180px] text-sm">
+            <button onclick="printEquipmentList('real')" class="block w-full text-left px-4 py-2 hover:bg-slate-100">실제 장비목록</button>
+            <button onclick="printEquipmentList('cert')" class="block w-full text-left px-4 py-2 hover:bg-slate-100">인증용 장비목록</button>
+            <button onclick="printEquipmentList()" class="block w-full text-left px-4 py-2 hover:bg-slate-100 border-t">현재 화면 목록</button>
+          </div>
+        </details>
       </div>`:''}
     </div>
     <div class="bg-white rounded-xl p-3 shadow-sm mb-3 flex flex-wrap gap-2 items-center">
@@ -556,7 +580,12 @@ route('#/equipment', ()=>{
         <option value="portable" ${filterMob==='portable'?'selected':''}>이동장비</option>
         <option value="fixed" ${filterMob==='fixed'?'selected':''}>고정설비</option>
       </select>
-      ${(filterStatus||filterCat||filterMob||q0)?`<a href="#/equipment" class="text-xs text-slate-500 underline">필터 해제</a>`:''}
+      <select id="f-grp" class="border rounded-lg px-2 py-2">
+        <option value="">전체 목록구분</option>
+        <option value="real" ${filterGrp==='real'?'selected':''}>실제 장비</option>
+        <option value="cert" ${filterGrp==='cert'?'selected':''}>인증용</option>
+      </select>
+      ${(filterStatus||filterCat||filterMob||filterGrp||q0)?`<a href="#/equipment" class="text-xs text-slate-500 underline">필터 해제</a>`:''}
     </div>
     <div class="bg-white rounded-xl shadow-sm overflow-hidden">
       <div class="grid grid-cols-12 px-4 py-2 bg-slate-50 text-xs font-semibold text-slate-500">
@@ -573,7 +602,7 @@ route('#/equipment', ()=>{
         const fixed = (e.mobility||'portable')==='fixed';
         const lastMaint = Store.byEqId('maintenance', e.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
         return `<a data-eq-row href="#/equipment/${e.id}" class="grid grid-cols-12 px-4 py-3 border-t hover:bg-slate-50 text-sm items-center">
-          <div class="col-span-3 font-bold">${e.type||''} ${fixed?'<span class="badge b-폐기" title="고정설비">📌</span>':''}<div class="text-slate-400 text-xs font-normal">${e.spec||''}</div></div>
+          <div class="col-span-3 font-bold">${e.type||''} ${fixed?'<span class="badge b-폐기" title="고정설비">📌</span>':''}${listGroupOf(e)==='cert'?'<span class="badge b-출장중" title="인증용 장비">인증</span>':listGroupOf(e)==='both'?'<span class="badge b-출장중" title="실제+인증용 공통">공통</span>':''}<div class="text-slate-400 text-xs font-normal">${e.spec||''}</div></div>
           <div class="col-span-2 text-xs text-slate-500">${e.id}</div>
           <div class="col-span-1 text-slate-500 text-xs">${e.category||''}</div>
           <div class="col-span-2">
@@ -667,6 +696,7 @@ route('#/equipment/:id', ({id})=>{
           <dl style="display:grid;grid-template-columns:7em 1fr;row-gap:3px;column-gap:12px;margin-top:10px;font-size:13px;">
             <dt style="color:var(--text-muted,#999);">장비관리번호</dt><dd>${e.id}</dd>
             <dt style="color:var(--text-muted,#999);">카테고리</dt><dd>${e.category||'-'}</dd>
+            <dt style="color:var(--text-muted,#999);">목록구분</dt><dd>${LIST_GROUPS[listGroupOf(e)]}</dd>
             <dt style="color:var(--text-muted,#999);">모델명</dt><dd>${e.serial||'-'}</dd>
             <dt style="color:var(--text-muted,#999);">구입일</dt><dd>${fmt(e.purchaseDate)||'-'}</dd>
             <dt style="color:var(--text-muted,#999);">점검주기</dt><dd>${e.inspectionCycleMonths?e.inspectionCycleMonths+'개월':'-'}</dd>
@@ -805,7 +835,7 @@ route('#/equipment/bulk', ()=>{
       if(ids.length===0){ alert('개수를 입력하세요'); return; }
       const base = {
         category:f.category.value, type:f.type.value.trim(), spec:f.spec.value.trim(),
-        mobility:f.mobility.value, inspectionCycleMonths:Number(f.inspectionCycleMonths.value)||12,
+        mobility:f.mobility.value, listGroup:f.listGroup.value, inspectionCycleMonths:Number(f.inspectionCycleMonths.value)||12,
         nextInspectionDate:f.nextInspectionDate.value||'', purchaseDate:f.purchaseDate.value||'', status:'사내',
       };
       if(!base.type){ alert('종류를 입력하세요'); return; }
@@ -843,7 +873,8 @@ route('#/equipment/bulk', ()=>{
           <label class="block text-sm">스펙<input name="spec" placeholder="예: 5Ton" class="w-full border rounded px-2 py-1 mt-1" /></label>
           <label class="block text-sm">구입일<input type="date" name="purchaseDate" class="w-full border rounded px-2 py-1 mt-1" /></label>
           <label class="block text-sm">점검주기(개월)<input type="number" name="inspectionCycleMonths" value="12" class="w-full border rounded px-2 py-1 mt-1" /></label>
-          <label class="block text-sm col-span-2">다음점검일<input type="date" name="nextInspectionDate" class="w-full border rounded px-2 py-1 mt-1" /></label>
+          <label class="block text-sm">다음점검일<input type="date" name="nextInspectionDate" class="w-full border rounded px-2 py-1 mt-1" /></label>
+          <label class="block text-sm">목록구분${listGroupSelect('real', 'w-full border rounded px-2 py-1 mt-1')}</label>
         </div>
       </fieldset>
       <div class="col-span-2 text-right"><button class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-semibold">일괄 등록 실행</button></div>
@@ -918,6 +949,7 @@ function equipmentEdit(eq){
       <label class="block">다음점검일<input type="date" name="nextInspectionDate" value="${fmt(eq?.nextInspectionDate)}" class="w-full border rounded px-3 py-2 mt-1" /></label>
       <label class="block">상태<select name="status" class="w-full border rounded px-3 py-2 mt-1">${['사내','출장중','정비중','분실','폐기'].map(s=>`<option ${eq?.status===s?'selected':''}>${s}</option>`).join('')}</select></label>
       <label class="block">유형<select name="mobility" class="w-full border rounded px-3 py-2 mt-1"><option value="portable" ${(eq?.mobility||'portable')==='portable'?'selected':''}>이동장비 (출고 가능)</option><option value="fixed" ${eq?.mobility==='fixed'?'selected':''}>📌 고정설비</option></select></label>
+      <label class="block col-span-2">목록구분 <span class="text-xs text-slate-400">(목록 인쇄 시 분류 기준)</span>${listGroupSelect(eq?listGroupOf(eq):'real', 'w-full border rounded px-3 py-2 mt-1')}</label>
       <label class="block col-span-2">비고 (NOTE)<textarea name="note" rows="3" class="w-full border rounded px-3 py-2 mt-1" placeholder="자유 기재 (특이사항, 보관위치 등)">${eq?.note||''}</textarea></label>
       <label class="block col-span-2">대표사진
         <input id="photo" type="file" accept="image/*" capture="environment" class="w-full border rounded px-3 py-2 mt-1" />
@@ -1210,7 +1242,7 @@ route('#/import', ()=>{
       for(const row of data){
         if(!row.id||!row.type){ skipped++; continue; }
         if(Store.getById('equipment',row.id)){ skipped++; continue; }
-        Store.add('equipment',{id:row.id,category:row.category||'기타',type:row.type,spec:row.spec||'',serial:row.serial||'',mobility:(row.mobility==='fixed'?'fixed':'portable'),purchaseDate:row.purchaseDate||'',inspectionCycleMonths:Number(row.inspectionCycleMonths)||12,nextInspectionDate:row.nextInspectionDate||'',status:row.status||'사내'});
+        Store.add('equipment',{id:row.id,category:row.category||'기타',type:row.type,spec:row.spec||'',serial:row.serial||'',mobility:(row.mobility==='fixed'?'fixed':'portable'),listGroup:(LIST_GROUPS[row.listGroup]?row.listGroup:'real'),purchaseDate:row.purchaseDate||'',inspectionCycleMonths:Number(row.inspectionCycleMonths)||12,nextInspectionDate:row.nextInspectionDate||'',status:row.status||'사내'});
         added++;
       }
       alert(`등록 ${added}건, 건너뜀 ${skipped}건`);
