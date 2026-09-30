@@ -1051,7 +1051,7 @@ async function parseEquipmentCards(file){
     const base = {sheet:name};
     if(!ids.length){ rows.push({...base, error:`${sheetRef}: 관리번호 "${clean(cell('J2'))||'없음'}"를 해석할 수 없음`}); continue; }
 
-    const type = clean(cell('C3')).replace(/\s+\d+$/,'');
+    const type = clean(cell('C3'));   // 카드 장비명 그대로 ("아크 용접기 1") — 번호로 개체를 구분한다
     const rawDate = clean(cell('I5'));
     const dm = rawDate.match(/^(\d{4})[.\-/]\s*(\d{1,2})[.\-/]\s*(\d{1,2})\.?$/);
     const purchaseDate = dm ? `${dm[1]}-${pad2(dm[2])}-${pad2(dm[3])}` : '';
@@ -1080,13 +1080,23 @@ async function parseEquipmentCards(file){
     });
     const warn = (range && qty && qty!==ids.length) ? `수량 ${qty} ≠ 관리번호 ${ids.length}개` : '';
     ids.forEach((id, i)=>rows.push({
-      ...base, id, type, spec: clean(cell('I4')), serial: clean(cell('C4')),
+      ...base, id, type: ids.length>1 ? `${type} ${i+1}` : type, spec: clean(cell('I4')), serial: clean(cell('C4')),
       purchaseDate, note, category, mobility,
       photo: (pics.length===ids.length ? pics[i] : pics[0])?.path || null,
       warn, include: true,
     }));
   }
+  numberDuplicateNames(rows.filter(r=>!r.error));
   return {fileName: file.name, rows, photos};
+}
+
+// 같은 장비명이 여러 건이면 관리번호 순으로 " 1", " 2" … 를 붙인다 (예: 수압 시험기 → 수압 시험기 1, 2)
+function numberDuplicateNames(rows){
+  const groups = {};
+  rows.forEach(r=>(groups[r.type] ||= []).push(r));
+  Object.values(groups).filter(g=>g.length>1).forEach(g=>{
+    g.sort((a,b)=>a.id.localeCompare(b.id)).forEach((r,i)=>{ r.type = `${r.type} ${i+1}`; });
+  });
 }
 
 // 각 행의 가져오기 가능 여부: 파일 안 관리번호 중복, 이미 등록된 번호
