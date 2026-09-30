@@ -572,7 +572,8 @@ route('#/equipment', ()=>{
         : opt.all ? Store.equipment.slice().sort(byId)
         : opt.none ? Store.equipment.filter(e=>certsOf(e).length===0).sort(byId)
         : Store.equipment.filter(e=>certsOf(e).includes(opt.cert)).sort(byId);
-      const title = !opt ? '장비 목록' : opt.all ? '전체 장비 목록' : opt.none ? '미인증 장비 목록' : `${escH(opt.cert)} 장비 목록`;
+      // 인증은 내부 관리용 — 인쇄물에는 제목·열 어디에도 인증 상태를 드러내지 않는다.
+      const title = '장비 목록';
       const rows = printList.map(e=>{
         const site = Store.getById('sites', e.currentSiteId);
         const holder = e.currentHolderId||'';
@@ -583,7 +584,6 @@ route('#/equipment', ()=>{
           <td>${e.id}</td>
           <td>${e.category||''}</td>
           <td>${e.status||'사내'}</td>
-          <td>${escH(certsOf(e).join(', '))||'미인증'}</td>
           <td>${loc}</td>
           <td>${fmt(lastMaint?.date)||'-'}</td>
           <td>${fmt(e.nextInspectionDate)||'-'}</td>
@@ -602,7 +602,7 @@ route('#/equipment', ()=>{
       </style></head><body>
         <h2>${title} (${printList.length}건)</h2>
         <p>출력일: ${todayISO()}</p>
-        <table><thead><tr><th>장비명</th><th>장비관리번호</th><th>카테고리</th><th>상태</th><th>인증</th><th>현재위치/소지자</th><th>최근점검</th><th>점검예정일</th></tr></thead>
+        <table><thead><tr><th>장비명</th><th>장비관리번호</th><th>카테고리</th><th>상태</th><th>현재위치/소지자</th><th>최근점검</th><th>점검예정일</th></tr></thead>
         <tbody>${rows}</tbody></table>
       </body></html>`;
       const w = window.open('','_blank','width=860,height=1200');
