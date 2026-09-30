@@ -1052,8 +1052,18 @@ async function parseEquipmentCards(file){
     const base = {sheet:name};
     if(!ids.length){ rows.push({...base, error:`${sheetRef}: 관리번호 "${clean(cell('J2'))||'없음'}"를 해석할 수 없음`}); continue; }
 
-    // 카드 장비명 그대로 ("아크 용접기 1") — 번호로 개체를 구분한다. 용량 표기는 "7TON"으로 통일.
-    const type = clean(cell('C3')).replace(/(\d)\s*ton\b/gi, '$1TON');
+    // 카드 장비명 그대로 ("아크 용접기 1") — 번호로 개체를 구분한다.
+    // 톤수가 붙은 이름("체인블록 7Ton")은 톤수를 떼고 관리번호 끝 숫자를 붙인다(SJ-CB-05 → 체인블록 5).
+    // 톤수는 규격 칸에 있으므로 거기서 구분한다. 용량 표기는 "7TON"으로 통일.
+    const TON_RE = /\s*\d+(?:\.\d+)?\s*ton\b/i;
+    const rawType = clean(cell('C3'));
+    const byIdNumber = TON_RE.test(rawType);
+    const type = byIdNumber ? rawType.replace(TON_RE, '').trim() : rawType;
+    const nameFor = (id, i) => {
+      const n = id.match(/(\d+)$/);
+      if(byIdNumber && n) return `${type} ${Number(n[1])}`;
+      return ids.length>1 ? `${type} ${i+1}` : type;
+    };
     const rawDate = clean(cell('I5'));
     const dm = rawDate.match(/^(\d{4})[.\-/]\s*(\d{1,2})[.\-/]\s*(\d{1,2})\.?$/);
     const purchaseDate = dm ? `${dm[1]}-${pad2(dm[2])}-${pad2(dm[3])}` : '';
@@ -1082,7 +1092,7 @@ async function parseEquipmentCards(file){
     });
     const warn = (range && qty && qty!==ids.length) ? `수량 ${qty} ≠ 관리번호 ${ids.length}개` : '';
     ids.forEach((id, i)=>rows.push({
-      ...base, id, type: ids.length>1 ? `${type} ${i+1}` : type, spec: clean(cell('I4')), serial: clean(cell('C4')),
+      ...base, id, type: nameFor(id, i), spec: clean(cell('I4')).replace(/(\d)\s*ton\b/gi, '$1TON'), serial: clean(cell('C4')),
       purchaseDate, note, category, mobility,
       photo: (pics.length===ids.length ? pics[i] : pics[0])?.path || null,
       warn, include: true,
