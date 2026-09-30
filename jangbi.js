@@ -981,8 +981,8 @@ route('#/equipment/bulk', ()=>{
 const CARD_CATS = [
   [/용접기|건조기|건조로/, '용접'],
   [/선반|밀링|드릴|밴드\s*쇼|플라즈마|가우징|밴딩|확관|커팅/, '공작'],
-  [/체인|레버블록|잭|크레인/, '운반'],
-  [/임팩|렌치/, '공구'],
+  [/체인|레버블록|크레인/, '운반'],
+  [/임팩|렌치|잭/, '공구'],
   [/정반|V\s*블록|게이지|시험기/, '측정'],
 ];
 const CARD_FIXED = /선반|밀링|드릴 머신|밴드\s*쇼|컴프레서|크레인|정반|유압프레스|^용접봉 건조로/;
@@ -1051,7 +1051,8 @@ async function parseEquipmentCards(file){
     const base = {sheet:name};
     if(!ids.length){ rows.push({...base, error:`${sheetRef}: 관리번호 "${clean(cell('J2'))||'없음'}"를 해석할 수 없음`}); continue; }
 
-    const type = clean(cell('C3'));   // 카드 장비명 그대로 ("아크 용접기 1") — 번호로 개체를 구분한다
+    // 카드 장비명 그대로 ("아크 용접기 1") — 번호로 개체를 구분한다. 용량 표기는 "7TON"으로 통일.
+    const type = clean(cell('C3')).replace(/(\d)\s*ton\b/gi, '$1TON');
     const rawDate = clean(cell('I5'));
     const dm = rawDate.match(/^(\d{4})[.\-/]\s*(\d{1,2})[.\-/]\s*(\d{1,2})\.?$/);
     const purchaseDate = dm ? `${dm[1]}-${pad2(dm[2])}-${pad2(dm[3])}` : '';
