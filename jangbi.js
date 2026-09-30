@@ -628,6 +628,7 @@ route('#/equipment', ()=>{
       ${admin?`<div class="flex gap-2 flex-wrap">
         <a href="#/equipment/new" class="bg-slate-900 text-white px-4 py-2 rounded-lg">+ 신규 등록</a>
         <a href="#/equipment/bulk" class="bg-emerald-600 text-white px-4 py-2 rounded-lg">+ 일괄 등록</a>
+        <a href="#/equipment/import-card" class="bg-teal-600 text-white px-4 py-2 rounded-lg">📇 이력카드 가져오기</a>
         <a href="#/qr-print" class="bg-amber-500 text-white px-4 py-2 rounded-lg">🏷 라벨 인쇄</a>
         <details id="print-menu" class="relative">
           <summary class="bg-slate-600 text-white px-4 py-2 rounded-lg cursor-pointer list-none">🖨 목록 인쇄 ▾</summary>
@@ -970,6 +971,249 @@ route('#/equipment/bulk', ()=>{
       </fieldset>
       <div class="col-span-2 text-right"><button class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-semibold">일괄 등록 실행</button></div>
     </form>
+  </div>`;
+});
+
+/* ── 장비이력카드(xlsx) 가져오기 ──
+   양식 10-03-01: 시트 1장 = 장비 1건(또는 관리번호 범위 "SJ-CB-02~04").
+   값은 고정 칸(J2 관리번호, C3 장비명, C4 모델명, I4 규격 …), 사진은 행 10 아래에 박힌 그림.
+   셀 값은 SheetJS 로, 그림은 xlsx(zip) 안의 drawing XML 을 직접 읽어 꺼낸다. */
+const CARD_CATS = [
+  [/용접기|건조기|건조로/, '용접'],
+  [/선반|밀링|드릴|밴드\s*쇼|플라즈마|가우징|밴딩|확관|커팅/, '공작'],
+  [/체인|레버블록|잭|크레인/, '운반'],
+  [/임팩|렌치/, '공구'],
+  [/정반|V\s*블록|게이지|시험기/, '측정'],
+];
+const CARD_FIXED = /선반|밀링|드릴 머신|밴드\s*쇼|컴프레서|크레인|정반|유압프레스|^용접봉 건조로/;
+let _card = null;   // { fileName, rows:[...], photos:{key:{blob,url}} }
+
+async function parseEquipmentCards(file){
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const wb = XLSX.read(buf, {type:'array'});
+  const zip = XLSX.CFB.read(buf, {type:'array'});
+  const readZip = p => XLSX.CFB.find(zip, '/'+p)?.content;   // CFB 는 앞에 '/'가 있어야 전체 경로로 찾는다
+  const readXml = p => { const c = readZip(p); return c ? new DOMParser().parseFromString(new TextDecoder().decode(c), 'application/xml') : null; };
+  const tags = (doc, name) => doc ? [...doc.getElementsByTagNameNS('*', name)] : [];
+  const RNS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const resolve = (base, target) => {
+    if(target.startsWith('/')) return target.slice(1);
+    const parts = base.split('/').slice(0,-1);
+    for(const seg of target.split('/')){ if(seg==='..') parts.pop(); else if(seg!=='.') parts.push(seg); }
+    return parts.join('/');
+  };
+  const rels = path => {
+    const i = path.lastIndexOf('/');
+    const doc = readXml(path.slice(0,i)+'/_rels/'+path.slice(i+1)+'.rels');
+    const m = {}; tags(doc,'Relationship').forEach(r=>m[r.getAttribute('Id')] = resolve(path, r.getAttribute('Target')));
+    return m;
+  };
+  // 시트 이름 → 시트 XML 경로
+  const wbRels = rels('xl/workbook.xml');
+  const sheetPath = {};
+  tags(readXml('xl/workbook.xml'),'sheet').forEach(s=>sheetPath[s.getAttribute('name')] = wbRels[s.getAttributeNS(RNS,'id')]);
+  // 시트 XML → 사진 영역(행 10 이하)의 그림들, 위→아래·왼→오른 순
+  const photosOf = sp => {
+    if(!sp) return [];
+    const dr = tags(readXml(sp),'drawing')[0]; if(!dr) return [];
+    const drPath = rels(sp)[dr.getAttributeNS(RNS,'id')]; if(!drPath) return [];
+    const media = rels(drPath);
+    const out = [];
+    for(const a of [...tags(readXml(drPath),'twoCellAnchor'), ...tags(readXml(drPath),'oneCellAnchor')]){
+      const from = tags(a,'from')[0], blip = tags(a,'blip')[0];
+      if(!from || !blip) continue;
+      const row = Number(tags(from,'row')[0]?.textContent), col = Number(tags(from,'col')[0]?.textContent);
+      const mp = media[blip.getAttributeNS(RNS,'embed')];
+      if(row < 8 || !mp) continue;          // 맨 위 로고 제외
+      out.push({row, col, path: mp});
+    }
+    return out.sort((x,y)=>x.row-y.row || x.col-y.col);
+  };
+
+  const clean = v => { const s = String(v??'').replace(/\s+/g,' ').trim(); return /^(N\/A|-+|\?+)$/i.test(s) ? '' : s; };
+  const photos = {};
+  const rows = [];
+  for(const name of wb.SheetNames){
+    const ws = wb.Sheets[name];
+    const cell = a => ws[a]?.v;
+    const sheetRef = `시트 "${name.trim()}"`;
+    if(String(cell('A3')||'').replace(/\s/g,'')!=='장비명' || String(cell('J1')||'').replace(/\s/g,'')!=='장비관리번호'){
+      rows.push({sheet:name, error:`${sheetRef}: 장비이력카드 양식이 아님`}); continue;
+    }
+    const rawId = String(cell('J2')||'').replace(/\s/g,'');
+    const qty = parseInt(String(cell('I3')||''), 10);
+    let ids = [];
+    const range = rawId.match(/^(.*?)(\d+)~(\d+)$/);
+    if(range){
+      const [, pre, a, b] = range;
+      for(let n=Number(a); n<=Number(b) && ids.length<200; n++) ids.push(pre+String(n).padStart(a.length,'0'));
+    } else if(/^[\w-]+$/.test(rawId)) ids = [rawId];
+    const base = {sheet:name};
+    if(!ids.length){ rows.push({...base, error:`${sheetRef}: 관리번호 "${clean(cell('J2'))||'없음'}"를 해석할 수 없음`}); continue; }
+
+    const type = clean(cell('C3')).replace(/\s+\d+$/,'');
+    const rawDate = clean(cell('I5'));
+    const dm = rawDate.match(/^(\d{4})[.\-/]\s*(\d{1,2})[.\-/]\s*(\d{1,2})\.?$/);
+    const purchaseDate = dm ? `${dm[1]}-${pad2(dm[2])}-${pad2(dm[3])}` : '';
+    const price = cell('C8');
+    const history = [];
+    for(let r=10; r<=19; r++){ const v = clean(cell('G'+r)); if(v) history.push(v); }
+    const note = [
+      clean(cell('C5')) && `구입처: ${clean(cell('C5'))}`,
+      clean(cell('C6')) && `구매처 주소: ${clean(cell('C6'))}`,
+      clean(cell('C7')) && `구매처 TEL: ${clean(cell('C7'))}`,
+      clean(cell('I7')) && `구매처 FAX: ${clean(cell('I7'))}`,
+      !dm && rawDate && `구입 일시: ${rawDate}`,
+      clean(price) && `구매 가액: ${typeof price==='number' ? price.toLocaleString()+'원' : clean(price)}`,
+      clean(cell('I8')) && `구매 구분: ${clean(cell('I8'))}`,
+      history.length && `기타 주요 이력:\n${history.join('\n')}`,
+    ].filter(Boolean).join('\n');
+    const category = (CARD_CATS.find(([re])=>re.test(type))||[,'기타'])[1];
+    const mobility = CARD_FIXED.test(type) ? 'fixed' : 'portable';
+
+    const pics = photosOf(sheetPath[name]);
+    pics.forEach(p=>{
+      if(photos[p.path]) return;
+      const ext = p.path.split('.').pop().toLowerCase();
+      const blob = new Blob([readZip(p.path)], {type: ext==='png' ? 'image/png' : 'image/jpeg'});
+      photos[p.path] = {blob, url: URL.createObjectURL(blob)};
+    });
+    const warn = (range && qty && qty!==ids.length) ? `수량 ${qty} ≠ 관리번호 ${ids.length}개` : '';
+    ids.forEach((id, i)=>rows.push({
+      ...base, id, type, spec: clean(cell('I4')), serial: clean(cell('C4')),
+      purchaseDate, note, category, mobility,
+      photo: (pics.length===ids.length ? pics[i] : pics[0])?.path || null,
+      warn, include: true,
+    }));
+  }
+  return {fileName: file.name, rows, photos};
+}
+
+// 각 행의 가져오기 가능 여부: 파일 안 관리번호 중복, 이미 등록된 번호
+function cardRowStatus(r, rows){
+  if(r.error) return {ok:false, cls:'text-red-600', text:r.error};
+  if(!r.id) return {ok:false, cls:'text-red-600', text:'관리번호 없음'};
+  if(Store.getById('equipment', r.id)) return {ok:false, cls:'text-slate-400', text:'이미 등록됨 (건너뜀)'};
+  if(rows.filter(x=>!x.error && x.id===r.id).length>1) return {ok:false, cls:'text-red-600', text:'파일 안에서 관리번호 중복 — 수정 필요'};
+  if(!r.type) return {ok:false, cls:'text-red-600', text:'장비명 없음'};
+  return {ok:true, cls: r.warn?'text-amber-600':'text-emerald-600', text: r.warn ? '⚠ '+r.warn : '가져오기 가능'};
+}
+
+function renderCardPreview(){
+  const box = document.getElementById('card-preview'); if(!box || !_card) return;
+  const rows = _card.rows;
+  const st = rows.map(r=>cardRowStatus(r, rows));
+  const ready = rows.filter((r,i)=>st[i].ok && r.include).length;
+  const cats = ['공작','용접','운반','공구','측정','기타'];
+  box.innerHTML = `
+    <div class="flex flex-wrap items-center gap-2 mb-2 text-sm">
+      <span class="font-semibold">${escH(_card.fileName)}</span>
+      <span class="text-slate-500">시트 ${new Set(rows.map(r=>r.sheet)).size}장 → 장비 ${rows.filter(r=>!r.error).length}건,
+        가져올 장비 <b class="text-emerald-700">${ready}</b>건, 확인 필요 <b class="text-red-600">${st.filter(s=>!s.ok && s.cls==='text-red-600').length}</b>건</span>
+    </div>
+    <div class="overflow-x-auto border rounded-lg">
+    <table class="w-full text-xs">
+      <thead class="bg-slate-50 text-slate-500"><tr>
+        <th class="p-2"></th><th class="p-2 text-left">사진</th><th class="p-2 text-left">관리번호</th><th class="p-2 text-left">장비명</th>
+        <th class="p-2 text-left">카테고리</th><th class="p-2 text-left">유형</th><th class="p-2 text-left">모델명 / 규격</th>
+        <th class="p-2 text-left">구입일</th><th class="p-2 text-left">비고</th><th class="p-2 text-left">상태</th>
+      </tr></thead>
+      <tbody>${rows.map((r,i)=> r.error ? `
+        <tr class="border-t bg-red-50"><td></td><td colspan="9" class="p-2 text-red-600">${escH(r.error)}</td></tr>` : `
+        <tr class="border-t ${st[i].ok?'':'bg-slate-50'}">
+          <td class="p-2"><input type="checkbox" data-ci="${i}" data-f="include" ${r.include&&st[i].ok?'checked':''} ${st[i].ok?'':'disabled'} /></td>
+          <td class="p-2">${r.photo?`<img src="${_card.photos[r.photo].url}" class="w-12 h-12 object-cover rounded border" />`:'<span class="text-slate-400">없음</span>'}</td>
+          <td class="p-2"><input data-ci="${i}" data-f="id" value="${escH(r.id)}" class="border rounded px-1 py-0.5 w-28" /></td>
+          <td class="p-2"><input data-ci="${i}" data-f="type" value="${escH(r.type)}" class="border rounded px-1 py-0.5 w-32" /></td>
+          <td class="p-2"><select data-ci="${i}" data-f="category" class="border rounded px-1 py-0.5">${cats.map(c=>`<option ${r.category===c?'selected':''}>${c}</option>`).join('')}</select></td>
+          <td class="p-2"><select data-ci="${i}" data-f="mobility" class="border rounded px-1 py-0.5"><option value="portable" ${r.mobility==='portable'?'selected':''}>이동</option><option value="fixed" ${r.mobility==='fixed'?'selected':''}>고정</option></select></td>
+          <td class="p-2">${escH(r.serial)||'-'}<div class="text-slate-400">${escH(r.spec)}</div></td>
+          <td class="p-2 whitespace-nowrap">${r.purchaseDate||'-'}</td>
+          <td class="p-2 text-slate-500 max-w-[220px] truncate" title="${escH(r.note)}">${escH(r.note.replace(/\n/g,' · '))||'-'}</td>
+          <td class="p-2 ${st[i].cls}">${escH(st[i].text)}<div class="text-slate-400">${escH(r.sheet.trim())}</div></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+  box.querySelectorAll('[data-ci]').forEach(el=>{
+    el.onchange = ()=>{
+      const r = rows[Number(el.dataset.ci)];
+      r[el.dataset.f] = el.type==='checkbox' ? el.checked : el.dataset.f==='id' ? el.value.replace(/\s/g,'') : el.value.trim();
+      renderCardPreview();
+    };
+  });
+  const btn = document.getElementById('card-import-btn');
+  if(btn){ btn.disabled = ready===0; btn.textContent = `선택한 ${ready}건 가져오기`; }
+}
+
+route('#/equipment/import-card', ()=>{
+  if(!Auth.isAdmin()) return `<div class="p-6">관리자만 가능합니다.</div>`;
+  setTimeout(()=>{
+    const fileIn = document.getElementById('card-file');
+    const msg = document.getElementById('card-msg');
+    if(_card) renderCardPreview();
+    fileIn.onchange = async ()=>{
+      const file = fileIn.files[0]; if(!file) return;
+      msg.textContent = '파일 읽는 중... (사진이 많으면 몇 초 걸립니다)';
+      try{
+        if(_card) Object.values(_card.photos).forEach(p=>URL.revokeObjectURL(p.url));
+        _card = await parseEquipmentCards(file);
+        msg.textContent = '';
+        renderCardPreview();
+      }catch(e){ console.error(e); msg.textContent = '❌ 파일을 읽지 못했습니다: '+e.message; }
+    };
+    document.getElementById('card-import-btn').onclick = async ()=>{
+      if(!_card) return;
+      const btn = document.getElementById('card-import-btn');
+      const rows = _card.rows.filter(r=>r.include && cardRowStatus(r, _card.rows).ok);
+      if(!rows.length) return;
+      const certs = collectCerts(new FormData(document.getElementById('card-opts')));
+      const supa = !!getSupaClient();
+      if(!confirm(`장비 ${rows.length}건을 등록합니다.${certs.length?`\n인증: ${certs.join(', ')}`:''}${supa?'':'\n\n⚠ Supabase 미연결 — 사진 없이 등록됩니다.'}\n계속할까요?`)) return;
+      btn.disabled = true;
+      const uploaded = {};   // 같은 사진(범위 관리번호)은 한 번만 올린다
+      let added = 0, photoFail = 0;
+      for(const r of rows){
+        msg.textContent = `(${added+1}/${rows.length}) ${r.id} 등록 중...`;
+        let photoUrl = '';
+        if(r.photo && supa){
+          if(!(r.photo in uploaded)){
+            const p = _card.photos[r.photo];
+            const res = await uploadPhoto(new File([p.blob], r.id+'.'+(p.blob.type==='image/png'?'png':'jpg'), {type:p.blob.type}), r.id);
+            uploaded[r.photo] = res.url || '';
+            if(res.error){ photoFail++; console.warn('[card] 사진 업로드 실패', r.id, res.error); }
+          }
+          photoUrl = uploaded[r.photo];
+        }
+        if(Store.getById('equipment', r.id)) continue;
+        Store.add('equipment', {
+          id:r.id, type:r.type, spec:r.spec, serial:r.serial, category:r.category, mobility:r.mobility,
+          purchaseDate:r.purchaseDate, note:r.note, photoUrl, certs,
+          inspectionCycleMonths:12, nextInspectionDate:'', status:'사내',
+        });
+        added++;
+      }
+      Object.values(_card.photos).forEach(p=>URL.revokeObjectURL(p.url));
+      _card = null;
+      alert(`장비 ${added}건 등록 완료${photoFail?`\n사진 업로드 실패 ${photoFail}건 — 해당 장비는 수정 화면에서 사진을 다시 올려 주세요`:''}`);
+      jbNavigate('#/equipment');
+    };
+  });
+  return `
+  <div>
+    <a href="#/equipment" class="text-sm text-blue-600">← 목록</a>
+    <h1 class="text-2xl font-bold mb-1 mt-1">장비이력카드 가져오기</h1>
+    <p class="text-sm text-slate-500 mb-4">장비이력카드 엑셀(양식 10-03-01, 시트 1장 = 장비 1건)을 읽어 장비를 한꺼번에 등록합니다. 카드 안의 사진도 함께 올립니다.
+      관리번호가 <code class="bg-slate-200 px-1 rounded">SJ-CB-02~04</code>처럼 범위면 번호마다 한 건씩 만듭니다. 이미 등록된 관리번호는 건너뜁니다.</p>
+    <div class="bg-white rounded-xl shadow-sm p-4 mb-3 space-y-3">
+      <input id="card-file" type="file" accept=".xlsx" class="border rounded px-3 py-2 w-full" />
+      <form id="card-opts" onsubmit="return false" class="text-sm">
+        <div class="font-semibold">가져오는 장비에 붙일 인증 <span class="text-xs text-slate-400 font-normal">(선택 안 하면 미인증)</span></div>
+        ${certInputs()}
+      </form>
+      <div id="card-msg" class="text-sm text-slate-500"></div>
+    </div>
+    <div id="card-preview" class="bg-white rounded-xl shadow-sm p-4 mb-3 text-sm text-slate-400">파일을 선택하면 미리보기가 나옵니다. 관리번호·장비명·카테고리·유형은 여기서 고칠 수 있습니다.</div>
+    <div class="text-right"><button id="card-import-btn" disabled class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-semibold disabled:opacity-40">가져오기</button></div>
   </div>`;
 });
 
