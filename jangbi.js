@@ -452,12 +452,27 @@ function adminDashboard(){
   </div>`;
 }
 
-/* ── 목록 구분 (실제 / 인증용 / 공통) ── */
-// listGroup 미지정 장비는 '실제'로 간주. '공통'은 두 목록 모두에 포함.
-const LIST_GROUPS = {real:'실제 장비', cert:'인증용', both:'공통 (실제+인증용)'};
-const listGroupOf = e => LIST_GROUPS[e.listGroup] ? e.listGroup : 'real';
-const inListGroup = (e, g) => { const x = listGroupOf(e); return x==='both' || x===g; };
-const listGroupSelect = (cur, cls) => `<select name="listGroup" class="${cls}">${Object.entries(LIST_GROUPS).map(([v,l])=>`<option value="${v}" ${cur===v?'selected':''}>${l}</option>`).join('')}</select>`;
+/* ── 인증 (장비별 복수 인증, 없으면 미인증) ── */
+// 인증 종류는 기본값 + 장비에 실제로 붙어 있는 인증에서 모은다 (별도 저장소 없음).
+// 새 인증은 입력하는 즉시 종류에 추가되고, 어느 장비에도 없으면 목록에서 사라진다(기본값 제외).
+const CERT_DEFAULTS = ['원자력 인증','ISO 인증'];
+const escH = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const certsOf = e => Array.isArray(e?.certs) ? e.certs.filter(Boolean) : [];
+const allCertTypes = () => [...new Set([...CERT_DEFAULTS, ...Store.equipment.flatMap(certsOf)])];
+const certBadges = e => certsOf(e).map(c=>`<span class="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 ml-1">${escH(c)}</span>`).join('');
+// 폼용: 인증 체크박스 + 직접 입력칸. 값은 collectCerts(FormData)로 읽는다.
+const certInputs = (cur=[]) => `
+  <div class="flex flex-wrap gap-x-4 gap-y-1 mt-1">
+    ${allCertTypes().map(c=>`<label class="inline-flex items-center gap-1 text-sm"><input type="checkbox" name="certs" value="${escH(c)}" ${cur.includes(c)?'checked':''} /> ${escH(c)}</label>`).join('')}
+  </div>
+  <input name="newCerts" class="w-full border rounded px-3 py-2 mt-2" placeholder="다른 인증 직접 입력 (쉼표로 여러 개) — 모두 비우면 미인증" />`;
+const collectCerts = fd => [...new Set([
+  ...fd.getAll('certs'),
+  ...String(fd.get('newCerts')||'').split(',').map(s=>s.trim()),
+].filter(Boolean))];
+
+// 목록 화면의 체크 선택 — 다시 그려도(실시간 동기화 포함) 유지되도록 모듈 변수에 둔다.
+const _eqSel = new Set();
 
 /* ── 장비 목록 ── */
 route('#/equipment', ()=>{
@@ -465,14 +480,16 @@ route('#/equipment', ()=>{
   const filterStatus = params.get('status')||'';
   const filterCat = params.get('cat')||'';
   const filterMob = params.get('mob')||'';
-  const filterGrp = params.get('grp')||'';
+  const filterCert = params.get('cert')||'';   // '' | '__none'(미인증) | 인증명
   const q0 = params.get('q')||'';
+  const admin = Auth.isAdmin();
   const updateHash = (k,v)=>{
     const p = new URLSearchParams(_jbPath.split('?')[1]||'');
     if(v) p.set(k,v); else p.delete(k);
     const qs = p.toString();
     jbNavigate('#/equipment'+(qs?'?'+qs:''));
   };
+  for(const id of [..._eqSel]) if(!Store.getById('equipment', id)) _eqSel.delete(id);
   setTimeout(()=>{
     const search = document.getElementById('eq-search');
     if(search){
@@ -484,24 +501,78 @@ route('#/equipment', ()=>{
         document.querySelectorAll('[data-eq-row]').forEach(r=>{
           r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
         });
+        syncSelUI();
         clearTimeout(t); t = setTimeout(()=>updateHash('q', search.value), 600);
       };
     }
     const fs = document.getElementById('f-status');
     const fc = document.getElementById('f-cat');
     const fm = document.getElementById('f-mob');
+    const fct = document.getElementById('f-cert');
     if(fs) fs.onchange = e=>updateHash('status', e.target.value);
     if(fc) fc.onchange = e=>updateHash('cat', e.target.value);
     if(fm) fm.onchange = e=>updateHash('mob', e.target.value);
-    const fg = document.getElementById('f-grp');
-    if(fg) fg.onchange = e=>updateHash('grp', e.target.value);
-    // group 지정 시 화면 필터와 무관하게 해당 구분 전체를 인쇄, 미지정 시 현재 화면 목록 인쇄
-    window.printEquipmentList = (group)=>{
+    if(fct) fct.onchange = e=>updateHash('cert', e.target.value);
+
+    // 체크 선택
+    const visibleBoxes = ()=>[...document.querySelectorAll('[data-sel]')].filter(b=>b.closest('[data-eq-row]').style.display!=='none');
+    const syncSelUI = ()=>{
+      const bar = document.getElementById('cert-bar');
+      const cnt = document.getElementById('sel-count');
+      const all = document.getElementById('sel-all');
+      if(bar) bar.style.display = _eqSel.size ? '' : 'none';
+      if(cnt) cnt.textContent = _eqSel.size;
+      if(all){
+        const vis = visibleBoxes();
+        const n = vis.filter(b=>b.checked).length;
+        all.checked = vis.length>0 && n===vis.length;
+        all.indeterminate = n>0 && n<vis.length;
+      }
+    };
+    document.querySelectorAll('[data-sel]').forEach(b=>{
+      b.onchange = ()=>{ b.checked ? _eqSel.add(b.value) : _eqSel.delete(b.value); syncSelUI(); };
+    });
+    const selAll = document.getElementById('sel-all');
+    if(selAll) selAll.onchange = ()=>{
+      visibleBoxes().forEach(b=>{ b.checked = selAll.checked; selAll.checked ? _eqSel.add(b.value) : _eqSel.delete(b.value); });
+      syncSelUI();
+    };
+    syncSelUI();
+
+    window.clearEqSel = ()=>{ _eqSel.clear(); jbRender(); };
+    // op: 'add' | 'remove' | 'clear'(모든 인증 제거 → 미인증)
+    window.bulkCert = (op)=>{
+      const ids = [..._eqSel].filter(id=>Store.getById('equipment', id));
+      if(!ids.length) return;
+      const name = (document.getElementById('cert-input')?.value||'').trim();
+      if(op!=='clear' && !name){ alert('인증을 선택하거나 입력하세요'); return; }
+      const msg = op==='add' ? `선택한 ${ids.length}건에 "${name}"을(를) 추가할까요?`
+        : op==='remove' ? `선택한 ${ids.length}건에서 "${name}"을(를) 제거할까요?`
+        : `선택한 ${ids.length}건의 인증을 모두 지우고 미인증으로 바꿀까요?`;
+      if(!confirm(msg)) return;
+      let changed = 0;
+      for(const id of ids){
+        const cur = certsOf(Store.getById('equipment', id));
+        const next = op==='add' ? (cur.includes(name) ? cur : [...cur, name])
+          : op==='remove' ? cur.filter(c=>c!==name) : [];
+        if(next.length===cur.length) continue;
+        Store.update('equipment', id, {certs: next});
+        Store.log('cert_change', id, `인증 변경: ${cur.join(', ')||'미인증'} → ${next.join(', ')||'미인증'}`, {certs: next});
+        changed++;
+      }
+      alert(`${changed}건 변경${ids.length-changed?` (이미 해당 상태 ${ids.length-changed}건)`:''}`);
+      jbRender();
+    };
+
+    // opt 없음: 현재 화면 목록 / {all:true}: 전체 / {cert:이름}: 해당 인증 / {none:true}: 미인증
+    window.printEquipmentList = (opt)=>{
       const menu = document.getElementById('print-menu'); if(menu) menu.open = false;
-      const printList = group
-        ? Store.equipment.filter(e=>inListGroup(e, group)).sort((a,b)=>a.id.localeCompare(b.id))
-        : list;
-      const title = group==='cert' ? '인증용 장비 목록' : group==='real' ? '실제 장비 목록' : '장비 목록';
+      const byId = (a,b)=>a.id.localeCompare(b.id);
+      const printList = !opt ? list
+        : opt.all ? Store.equipment.slice().sort(byId)
+        : opt.none ? Store.equipment.filter(e=>certsOf(e).length===0).sort(byId)
+        : Store.equipment.filter(e=>certsOf(e).includes(opt.cert)).sort(byId);
+      const title = !opt ? '장비 목록' : opt.all ? '전체 장비 목록' : opt.none ? '미인증 장비 목록' : `${escH(opt.cert)} 장비 목록`;
       const rows = printList.map(e=>{
         const site = Store.getById('sites', e.currentSiteId);
         const holder = e.currentHolderId||'';
@@ -512,6 +583,7 @@ route('#/equipment', ()=>{
           <td>${e.id}</td>
           <td>${e.category||''}</td>
           <td>${e.status||'사내'}</td>
+          <td>${escH(certsOf(e).join(', '))||'미인증'}</td>
           <td>${loc}</td>
           <td>${fmt(lastMaint?.date)||'-'}</td>
           <td>${fmt(e.nextInspectionDate)||'-'}</td>
@@ -530,7 +602,7 @@ route('#/equipment', ()=>{
       </style></head><body>
         <h2>${title} (${printList.length}건)</h2>
         <p>출력일: ${todayISO()}</p>
-        <table><thead><tr><th>장비명</th><th>장비관리번호</th><th>카테고리</th><th>상태</th><th>현재위치/소지자</th><th>최근점검</th><th>점검예정일</th></tr></thead>
+        <table><thead><tr><th>장비명</th><th>장비관리번호</th><th>카테고리</th><th>상태</th><th>인증</th><th>현재위치/소지자</th><th>최근점검</th><th>점검예정일</th></tr></thead>
         <tbody>${rows}</tbody></table>
       </body></html>`;
       const w = window.open('','_blank','width=860,height=1200');
@@ -543,24 +615,27 @@ route('#/equipment', ()=>{
   if(filterStatus) list = list.filter(e=>e.status===filterStatus);
   if(filterCat) list = list.filter(e=>e.category===filterCat);
   if(filterMob) list = list.filter(e=>(e.mobility||'portable')===filterMob);
-  if(filterGrp) list = list.filter(e=>inListGroup(e, filterGrp));
+  if(filterCert) list = list.filter(e=>filterCert==='__none' ? certsOf(e).length===0 : certsOf(e).includes(filterCert));
   if(q0){ const qq = q0.toLowerCase(); list = list.filter(e=>JSON.stringify(e).toLowerCase().includes(qq)); }
   const cats = [...new Set(Store.equipment.map(e=>e.category).filter(Boolean))];
+  const certTypes = allCertTypes();
+  const menuBtn = 'block w-full text-left px-4 py-2 hover:bg-slate-100';
 
   return `
   <div>
     <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
       <h1 class="text-2xl font-bold">장비 목록 (${list.length})</h1>
-      ${Auth.isAdmin()?`<div class="flex gap-2 flex-wrap">
+      ${admin?`<div class="flex gap-2 flex-wrap">
         <a href="#/equipment/new" class="bg-slate-900 text-white px-4 py-2 rounded-lg">+ 신규 등록</a>
         <a href="#/equipment/bulk" class="bg-emerald-600 text-white px-4 py-2 rounded-lg">+ 일괄 등록</a>
         <a href="#/qr-print" class="bg-amber-500 text-white px-4 py-2 rounded-lg">🏷 라벨 인쇄</a>
         <details id="print-menu" class="relative">
           <summary class="bg-slate-600 text-white px-4 py-2 rounded-lg cursor-pointer list-none">🖨 목록 인쇄 ▾</summary>
-          <div class="absolute left-0 md:left-auto md:right-0 mt-1 z-10 bg-white text-slate-800 border rounded-lg shadow-lg py-1 min-w-[180px] text-sm">
-            <button onclick="printEquipmentList('real')" class="block w-full text-left px-4 py-2 hover:bg-slate-100">실제 장비목록</button>
-            <button onclick="printEquipmentList('cert')" class="block w-full text-left px-4 py-2 hover:bg-slate-100">인증용 장비목록</button>
-            <button onclick="printEquipmentList()" class="block w-full text-left px-4 py-2 hover:bg-slate-100 border-t">현재 화면 목록</button>
+          <div class="absolute left-0 md:left-auto md:right-0 mt-1 z-10 bg-white text-slate-800 border rounded-lg shadow-lg py-1 min-w-[200px] text-sm">
+            <button onclick="printEquipmentList({all:true})" class="${menuBtn}">전체 장비목록</button>
+            ${certTypes.map(c=>`<button data-cert="${escH(c)}" onclick="printEquipmentList({cert:this.dataset.cert})" class="${menuBtn}">${escH(c)} 장비목록</button>`).join('')}
+            <button onclick="printEquipmentList({none:true})" class="${menuBtn}">미인증 장비목록</button>
+            <button onclick="printEquipmentList()" class="${menuBtn} border-t">현재 화면 목록</button>
           </div>
         </details>
       </div>`:''}
@@ -580,18 +655,31 @@ route('#/equipment', ()=>{
         <option value="portable" ${filterMob==='portable'?'selected':''}>이동장비</option>
         <option value="fixed" ${filterMob==='fixed'?'selected':''}>고정설비</option>
       </select>
-      <select id="f-grp" class="border rounded-lg px-2 py-2">
-        <option value="">전체 목록구분</option>
-        <option value="real" ${filterGrp==='real'?'selected':''}>실제 장비</option>
-        <option value="cert" ${filterGrp==='cert'?'selected':''}>인증용</option>
+      <select id="f-cert" class="border rounded-lg px-2 py-2">
+        <option value="">전체 인증</option>
+        <option value="__none" ${filterCert==='__none'?'selected':''}>미인증</option>
+        ${certTypes.map(c=>`<option value="${escH(c)}" ${c===filterCert?'selected':''}>${escH(c)}</option>`).join('')}
       </select>
-      ${(filterStatus||filterCat||filterMob||filterGrp||q0)?`<a href="#/equipment" class="text-xs text-slate-500 underline">필터 해제</a>`:''}
+      ${(filterStatus||filterCat||filterMob||filterCert||q0)?`<a href="#/equipment" class="text-xs text-slate-500 underline">필터 해제</a>`:''}
     </div>
+    ${admin?`
+    <div id="cert-bar" style="display:none" class="bg-indigo-50 border border-indigo-200 text-slate-800 rounded-xl p-3 mb-3 flex flex-wrap gap-2 items-center text-sm">
+      <span class="font-semibold">선택 <span id="sel-count">0</span>건</span>
+      <input id="cert-input" list="cert-types" placeholder="인증 선택 또는 새로 입력" class="border rounded-lg px-3 py-1.5 bg-white min-w-[180px]" />
+      <datalist id="cert-types">${certTypes.map(c=>`<option value="${escH(c)}"></option>`).join('')}</datalist>
+      <button onclick="bulkCert('add')" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg">+ 인증 추가</button>
+      <button onclick="bulkCert('remove')" class="bg-white border border-indigo-300 text-indigo-700 px-3 py-1.5 rounded-lg">− 인증 제거</button>
+      <button onclick="bulkCert('clear')" class="bg-white border px-3 py-1.5 rounded-lg">미인증으로</button>
+      <button onclick="clearEqSel()" class="text-xs text-slate-500 underline ml-auto">선택 해제</button>
+    </div>`:''}
     <div class="bg-white rounded-xl shadow-sm overflow-hidden">
-      <div class="grid grid-cols-12 px-4 py-2 bg-slate-50 text-xs font-semibold text-slate-500">
-        <div class="col-span-3">장비명</div><div class="col-span-2">장비관리번호</div><div class="col-span-1">카테고리</div>
-        <div class="col-span-2">상태</div><div class="col-span-2">현재 위치</div>
-        <div class="col-span-1 text-right">최근점검</div><div class="col-span-1 text-right">점검예정일</div>
+      <div class="flex items-center bg-slate-50 text-xs font-semibold text-slate-500">
+        ${admin?`<label class="pl-4 pr-1 py-2 cursor-pointer" title="보이는 장비 전체 선택"><input id="sel-all" type="checkbox" /></label>`:''}
+        <div class="grid grid-cols-12 flex-1 px-4 py-2">
+          <div class="col-span-3">장비명</div><div class="col-span-2">장비관리번호</div><div class="col-span-1">카테고리</div>
+          <div class="col-span-2">상태</div><div class="col-span-2">현재 위치</div>
+          <div class="col-span-1 text-right">최근점검</div><div class="col-span-1 text-right">점검예정일</div>
+        </div>
       </div>
       ${list.length===0?'<div class="p-6 text-center text-slate-400">등록된 장비 없음</div>':list.map(e=>{
         const site = Store.getById('sites', e.currentSiteId);
@@ -601,8 +689,10 @@ route('#/equipment', ()=>{
         const inspOverdue = e.nextInspectionDate && isOverdue(e.nextInspectionDate);
         const fixed = (e.mobility||'portable')==='fixed';
         const lastMaint = Store.byEqId('maintenance', e.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
-        return `<a data-eq-row href="#/equipment/${e.id}" class="grid grid-cols-12 px-4 py-3 border-t hover:bg-slate-50 text-sm items-center">
-          <div class="col-span-3 font-bold">${e.type||''} ${fixed?'<span class="badge b-폐기" title="고정설비">📌</span>':''}${listGroupOf(e)==='cert'?'<span class="badge b-출장중" title="인증용 장비">인증</span>':listGroupOf(e)==='both'?'<span class="badge b-출장중" title="실제+인증용 공통">공통</span>':''}<div class="text-slate-400 text-xs font-normal">${e.spec||''}</div></div>
+        return `<div data-eq-row class="flex items-center border-t hover:bg-slate-50">
+          ${admin?`<label class="pl-4 pr-1 py-3 cursor-pointer"><input type="checkbox" data-sel value="${e.id}" ${_eqSel.has(e.id)?'checked':''} /></label>`:''}
+          <a href="#/equipment/${e.id}" class="grid grid-cols-12 flex-1 px-4 py-3 text-sm items-center">
+          <div class="col-span-3 font-bold">${e.type||''} ${fixed?'<span class="badge b-폐기" title="고정설비">📌</span>':''}${certBadges(e)}<div class="text-slate-400 text-xs font-normal">${e.spec||''}</div></div>
           <div class="col-span-2 text-xs text-slate-500">${e.id}</div>
           <div class="col-span-1 text-slate-500 text-xs">${e.category||''}</div>
           <div class="col-span-2">
@@ -612,7 +702,8 @@ route('#/equipment', ()=>{
           <div class="col-span-2 text-xs text-slate-500">${e.status==='출장중'?(site?.name||'-')+(u?` / ${u.name}`:''):'-'}</div>
           <div class="col-span-1 text-right text-xs text-slate-400">${fmt(lastMaint?.date)||'-'}</div>
           <div class="col-span-1 text-right text-xs ${inspOverdue?'text-red-500 font-semibold':inspSoon?'text-amber-500 font-semibold':'text-slate-400'}">${fmt(e.nextInspectionDate)||'-'}</div>
-        </a>`;
+          </a>
+        </div>`;
       }).join('')}
     </div>
   </div>`;
@@ -661,9 +752,9 @@ route('#/equipment/:id', ({id})=>{
     });
   });
   Store.byEqId('auditLogs', id)
-    .filter(a=>['lost','found','status_change'].includes(a.action))
+    .filter(a=>['lost','found','status_change','cert_change'].includes(a.action))
     .forEach(a=>{
-      const iconMap = {lost:'🔴', found:'🟢', status_change:'🔄'};
+      const iconMap = {lost:'🔴', found:'🟢', status_change:'🔄', cert_change:'🏅'};
       events.push({
         ts: a.ts, kind: a.action,
         icon: iconMap[a.action]||'📝',
@@ -696,7 +787,7 @@ route('#/equipment/:id', ({id})=>{
           <dl style="display:grid;grid-template-columns:7em 1fr;row-gap:3px;column-gap:12px;margin-top:10px;font-size:13px;">
             <dt style="color:var(--text-muted,#999);">장비관리번호</dt><dd>${e.id}</dd>
             <dt style="color:var(--text-muted,#999);">카테고리</dt><dd>${e.category||'-'}</dd>
-            <dt style="color:var(--text-muted,#999);">목록구분</dt><dd>${LIST_GROUPS[listGroupOf(e)]}</dd>
+            <dt style="color:var(--text-muted,#999);">인증</dt><dd>${certsOf(e).length?certBadges(e).replace(/ ml-1/g,' mr-1'):'미인증'}</dd>
             <dt style="color:var(--text-muted,#999);">모델명</dt><dd>${e.serial||'-'}</dd>
             <dt style="color:var(--text-muted,#999);">구입일</dt><dd>${fmt(e.purchaseDate)||'-'}</dd>
             <dt style="color:var(--text-muted,#999);">점검주기</dt><dd>${e.inspectionCycleMonths?e.inspectionCycleMonths+'개월':'-'}</dd>
@@ -835,7 +926,7 @@ route('#/equipment/bulk', ()=>{
       if(ids.length===0){ alert('개수를 입력하세요'); return; }
       const base = {
         category:f.category.value, type:f.type.value.trim(), spec:f.spec.value.trim(),
-        mobility:f.mobility.value, listGroup:f.listGroup.value, inspectionCycleMonths:Number(f.inspectionCycleMonths.value)||12,
+        mobility:f.mobility.value, certs:collectCerts(new FormData(f)), inspectionCycleMonths:Number(f.inspectionCycleMonths.value)||12,
         nextInspectionDate:f.nextInspectionDate.value||'', purchaseDate:f.purchaseDate.value||'', status:'사내',
       };
       if(!base.type){ alert('종류를 입력하세요'); return; }
@@ -873,8 +964,8 @@ route('#/equipment/bulk', ()=>{
           <label class="block text-sm">스펙<input name="spec" placeholder="예: 5Ton" class="w-full border rounded px-2 py-1 mt-1" /></label>
           <label class="block text-sm">구입일<input type="date" name="purchaseDate" class="w-full border rounded px-2 py-1 mt-1" /></label>
           <label class="block text-sm">점검주기(개월)<input type="number" name="inspectionCycleMonths" value="12" class="w-full border rounded px-2 py-1 mt-1" /></label>
-          <label class="block text-sm">다음점검일<input type="date" name="nextInspectionDate" class="w-full border rounded px-2 py-1 mt-1" /></label>
-          <label class="block text-sm">목록구분${listGroupSelect('real', 'w-full border rounded px-2 py-1 mt-1')}</label>
+          <label class="block text-sm col-span-2">다음점검일<input type="date" name="nextInspectionDate" class="w-full border rounded px-2 py-1 mt-1" /></label>
+          <div class="block text-sm col-span-2">인증${certInputs()}</div>
         </div>
       </fieldset>
       <div class="col-span-2 text-right"><button class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-semibold">일괄 등록 실행</button></div>
@@ -919,6 +1010,7 @@ function equipmentEdit(eq){
         }
         const fd = new FormData(f);
         const data = Object.fromEntries(fd.entries());
+        data.certs = collectCerts(fd); delete data.newCerts;
         data.photoUrl = photoUrl;
         data.inspectionCycleMonths = Number(data.inspectionCycleMonths)||12;
         if(isNew){
@@ -949,7 +1041,7 @@ function equipmentEdit(eq){
       <label class="block">다음점검일<input type="date" name="nextInspectionDate" value="${fmt(eq?.nextInspectionDate)}" class="w-full border rounded px-3 py-2 mt-1" /></label>
       <label class="block">상태<select name="status" class="w-full border rounded px-3 py-2 mt-1">${['사내','출장중','정비중','분실','폐기'].map(s=>`<option ${eq?.status===s?'selected':''}>${s}</option>`).join('')}</select></label>
       <label class="block">유형<select name="mobility" class="w-full border rounded px-3 py-2 mt-1"><option value="portable" ${(eq?.mobility||'portable')==='portable'?'selected':''}>이동장비 (출고 가능)</option><option value="fixed" ${eq?.mobility==='fixed'?'selected':''}>📌 고정설비</option></select></label>
-      <label class="block col-span-2">목록구분 <span class="text-xs text-slate-400">(목록 인쇄 시 분류 기준)</span>${listGroupSelect(eq?listGroupOf(eq):'real', 'w-full border rounded px-3 py-2 mt-1')}</label>
+      <div class="block col-span-2">인증 <span class="text-xs text-slate-400">(여러 개 선택 가능, 없으면 미인증)</span>${certInputs(certsOf(eq))}</div>
       <label class="block col-span-2">비고 (NOTE)<textarea name="note" rows="3" class="w-full border rounded px-3 py-2 mt-1" placeholder="자유 기재 (특이사항, 보관위치 등)">${eq?.note||''}</textarea></label>
       <label class="block col-span-2">대표사진
         <input id="photo" type="file" accept="image/*" capture="environment" class="w-full border rounded px-3 py-2 mt-1" />
@@ -1242,7 +1334,7 @@ route('#/import', ()=>{
       for(const row of data){
         if(!row.id||!row.type){ skipped++; continue; }
         if(Store.getById('equipment',row.id)){ skipped++; continue; }
-        Store.add('equipment',{id:row.id,category:row.category||'기타',type:row.type,spec:row.spec||'',serial:row.serial||'',mobility:(row.mobility==='fixed'?'fixed':'portable'),listGroup:(LIST_GROUPS[row.listGroup]?row.listGroup:'real'),purchaseDate:row.purchaseDate||'',inspectionCycleMonths:Number(row.inspectionCycleMonths)||12,nextInspectionDate:row.nextInspectionDate||'',status:row.status||'사내'});
+        Store.add('equipment',{id:row.id,category:row.category||'기타',type:row.type,spec:row.spec||'',serial:row.serial||'',mobility:(row.mobility==='fixed'?'fixed':'portable'),certs:[...new Set((row.certs||'').split(/[;|]/).map(s=>s.trim()).filter(Boolean))],purchaseDate:row.purchaseDate||'',inspectionCycleMonths:Number(row.inspectionCycleMonths)||12,nextInspectionDate:row.nextInspectionDate||'',status:row.status||'사내'});
         added++;
       }
       alert(`등록 ${added}건, 건너뜀 ${skipped}건`);
@@ -1250,7 +1342,7 @@ route('#/import', ()=>{
     };
   });
   function parseCSVLine(line){ const out=[]; let cur=''; let inQ=false; for(const ch of line){ if(ch==='"'){ inQ=!inQ; continue; } if(ch===','&&!inQ){ out.push(cur); cur=''; continue; } cur+=ch; } out.push(cur); return out; }
-  const sample=`id,category,type,spec,mobility,serial,purchaseDate,inspectionCycleMonths,nextInspectionDate,status\nTIG-01,용접,TIG 용접기,350A,portable,SN12345,2022-03-15,12,2026-06-01,사내\nCB-10T-01,운반,체인블록,10Ton,portable,,,12,,사내`;
+  const sample=`id,category,type,spec,mobility,serial,purchaseDate,inspectionCycleMonths,nextInspectionDate,status,certs\nTIG-01,용접,TIG 용접기,350A,portable,SN12345,2022-03-15,12,2026-06-01,사내,원자력 인증;ISO 인증\nCB-10T-01,운반,체인블록,10Ton,portable,,,12,,사내,`;
   const sampleBOM='﻿'+sample;
   return `
   <div>
@@ -1258,6 +1350,7 @@ route('#/import', ()=>{
     <div class="bg-white rounded-xl shadow-sm p-4 mb-4">
       <h2 class="font-bold mb-2">1) 템플릿 다운로드</h2>
       <pre class="bg-slate-50 p-3 rounded text-xs overflow-x-auto">${sample}</pre>
+      <p class="text-xs text-slate-500 mt-1">certs: 인증이 여러 개면 세미콜론(;)으로 구분, 비우면 미인증</p>
       <a download="equipment_template.csv" href="data:text/csv;charset=utf-8,${encodeURIComponent(sampleBOM)}" class="inline-block mt-2 bg-slate-200 px-3 py-1 rounded text-sm">↓ 템플릿 받기</a>
     </div>
     <div class="bg-white rounded-xl shadow-sm p-4">
