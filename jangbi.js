@@ -753,9 +753,10 @@ route('#/equipment/:id', ({id})=>{
     });
   });
   Store.byEqId('auditLogs', id)
-    .filter(a=>['lost','found','status_change','cert_change'].includes(a.action))
+    // cert_change(인증 변경)는 내부 관리용이라 기록만 남기고 타임라인에는 띄우지 않는다
+    .filter(a=>['lost','found','status_change'].includes(a.action))
     .forEach(a=>{
-      const iconMap = {lost:'🔴', found:'🟢', status_change:'🔄', cert_change:'🏅'};
+      const iconMap = {lost:'🔴', found:'🟢', status_change:'🔄'};
       events.push({
         ts: a.ts, kind: a.action,
         icon: iconMap[a.action]||'📝',
