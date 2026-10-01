@@ -36,6 +36,12 @@ const fmt = (d) => {
   const x = new Date(d);
   return `${x.getFullYear()}-${pad2(x.getMonth()+1)}-${pad2(x.getDate())}`;
 };
+// 'YYYY-MM-DD' + n개월. 말일 넘침은 그 달 말일로 맞춘다 (1/31 + 1개월 → 2/28)
+const addMonthsISO = (iso, n) => {
+  const [y,m,d] = iso.slice(0,10).split('-').map(Number);
+  const last = new Date(y, m-1+n+1, 0).getDate();
+  return fmt(new Date(y, m-1+n, Math.min(d, last)));
+};
 const daysBetween = (a,b) => {
   const A = toLocalMidnight(a), B = toLocalMidnight(b);
   if(!A || !B) return 0;
@@ -1412,14 +1418,26 @@ route('#/maintenance', ()=>{
       alert('정비 이력 저장됨');
       jbNavigate('#/equipment/'+d.equipmentId);
     };
-    const eqsel = document.getElementById('eqsel');
-    if(eqsel) eqsel.onchange = e=>{
-      const eq = Store.getById('equipment', e.target.value);
-      if(eq?.inspectionCycleMonths){
-        const next = new Date(); next.setMonth(next.getMonth()+Number(eq.inspectionCycleMonths));
-        document.getElementById('next-insp').value = next.toISOString().slice(0,10);
-      }
+    // 다음 점검 예정일: 빠른 선택(정비 날짜 기준 N개월 후) 또는 직접 지정
+    const dateIn = f.querySelector('[name=date]');
+    const nextIn = document.getElementById('next-insp');
+    const preset = document.getElementById('next-insp-preset');
+    const applyPreset = ()=>{
+      const n = Number(preset.value);
+      if(n && dateIn.value) nextIn.value = addMonthsISO(dateIn.value, n);
     };
+    preset.onchange = applyPreset;
+    dateIn.addEventListener('change', applyPreset);         // 정비 날짜를 바꾸면 선택한 기간으로 다시 계산
+    nextIn.addEventListener('input', ()=>{ preset.value = ''; });   // 직접 고르면 "직접 지정"
+    // 장비를 고르면 그 장비의 점검주기로 채운다 (빠른 선택에 없는 주기면 날짜만 채움)
+    const eqsel = document.getElementById('eqsel');
+    const fillFromCycle = ()=>{
+      const months = Number(Store.getById('equipment', eqsel.value)?.inspectionCycleMonths)||0;
+      if(!months) return;
+      preset.value = [...preset.options].some(o=>Number(o.value)===months) ? String(months) : '';
+      nextIn.value = addMonthsISO(dateIn.value || todayISO(), months);
+    };
+    if(eqsel){ eqsel.onchange = fillFromCycle; if(eqsel.value) fillFromCycle(); }
   });
   return `
   <div>
@@ -1430,7 +1448,18 @@ route('#/maintenance', ()=>{
       <label class="block">종류<select name="type" class="w-full border rounded px-3 py-2 mt-1">${['일상점검','정기점검','수리','교정'].map(t=>`<option>${t}</option>`).join('')}</select></label>
       <label class="block">교체 부품<input name="partsReplaced" class="w-full border rounded px-3 py-2 mt-1" /></label>
       <label class="block">비용(원)<input type="number" name="cost" class="w-full border rounded px-3 py-2 mt-1" /></label>
-      <label class="block col-span-2">다음 점검 예정일<input id="next-insp" type="date" name="nextInspectionDate" class="w-full border rounded px-3 py-2 mt-1" /></label>
+      <div class="block col-span-2">다음 점검 예정일 <span class="text-xs text-slate-400">(정비 날짜 기준)</span>
+        <div class="flex gap-2 mt-1">
+          <select id="next-insp-preset" class="border rounded px-3 py-2">
+            <option value="">직접 지정</option>
+            <option value="3">3개월 후</option>
+            <option value="6">6개월 후</option>
+            <option value="12">1년 후</option>
+            <option value="24">2년 후</option>
+          </select>
+          <input id="next-insp" type="date" name="nextInspectionDate" class="flex-1 border rounded px-3 py-2" />
+        </div>
+      </div>
       <label class="block col-span-2">메모<textarea name="note" rows="3" class="w-full border rounded px-3 py-2 mt-1"></textarea></label>
       <div class="col-span-2 text-right"><button class="bg-slate-900 text-white px-6 py-2 rounded-lg">저장</button></div>
     </form>
