@@ -326,7 +326,7 @@ function layout(content){
     {h:'#/equipment', label:'장비목록', icon:'🔧'},
     admin && {h:'#/maintenance', label:'정비입력', icon:'🛠️'},
     admin && {h:'#/consumables', label:'소모품', icon:'📦'},
-    {h:'#/inspection', label:'월간점검', icon:'📋'},
+    admin && {h:'#/inspection', label:'월간점검', icon:'📋'},
   ].filter(Boolean);
 
   return `
@@ -838,7 +838,7 @@ route('#/equipment/:id', ({id})=>{
               <span style="width:1px;height:20px;background:var(--border);display:inline-block;margin:0 2px;"></span>
               <a href="#/equipment/${e.id}/edit" style="background:var(--surface3);border:1px solid var(--border);color:var(--text);padding:5px 13px;border-radius:6px;font-size:13px;text-decoration:none;display:inline-block;">✏️ 수정</a>
               <a href="#/maintenance?eq=${e.id}" style="background:var(--surface3);border:1px solid var(--border);color:var(--text);padding:5px 13px;border-radius:6px;font-size:13px;text-decoration:none;display:inline-block;">📋 정비기록</a>
-              ${inspInfo(e)?`<a href="#/inspection/${e.id}" style="background:#059669;color:#fff;padding:5px 13px;border-radius:6px;font-size:13px;text-decoration:none;display:inline-block;">✅ 월간 점검${inspOf(e.id, thisMonth())?' (이번 달 완료)':''}</a>`:''}
+              ${inspInfo(e)?`<a href="#/inspection/${e.id}" style="background:var(--surface3);border:1px solid var(--border);color:var(--text);padding:5px 13px;border-radius:6px;font-size:13px;text-decoration:none;display:inline-block;">📋 월간 점검${inspOf(e.id, thisMonth())?' ✅':''}</a>`:''}
             `:''}
           </div>
         </div>
@@ -1472,102 +1472,13 @@ route('#/maintenance', ()=>{
   </div>`;
 });
 
-/* ── 월간 점검 (기계 설비 점검 기준표, 양식 14-01-07) ──
-   점검 항목은 장비 종류별 기준표에서 옮겨 왔다. 항목: [점검부위, 점검항목, 운전 중, 정지 중, 점검기준]
-   결과는 정비 이력(maintenance)에 type '월간점검' 으로 장비·월당 1건 저장한다.
-   기록은 이번 달 것만 입력·수정할 수 있다 — 지난 달 칸을 나중에 채울 수 없게. */
-const INSP_TEMPLATES = (()=>{
-  const BODY   = ['몸체 (BODY)','VISUAL',false,true,'파손,결함 및 청결 점검'];
-  const WORK   = ['작동 상태 WORKING CONDITION','FUNCTIONAL CONDITION',true,false,'작동 상태 확인 소음진동 여부'];
-  const CABLE  = ['케이블 연결상태','FUNCTIONAL CONDITION',false,true,'케이블 연결 및 절연 상태 점검'];
-  const CLEAN  = ['내부 청소 INTERNAL CLEANING','VISUAL',false,true,'내부 먼지 상태 점검'];
-  const SWITCH = ['스위치 SWITCH','FUNCTIONAL CONDITION',true,false,'스위치 기능 상태 점검'];
-  const PGAUGE = ['압력계 PRESSURE GAUGE','FUNCTIONAL CONDITION',true,false,'압력계의 정상 작동 여부'];
-  const AMMETER= ['전류계 AMMETER','FUNCTIONAL CONDITION',true,false,'전류계의 정상 작동 여부'];
-  const GEAR   = ['보호구 SAFETY GEAR','VISUAL',false,true,'보호구 상태 및 교체 시기 점검'];
-  const AIRCOOL= ['냉각 시스템 COOLING SYSTEM','FUNCTIONAL CONDITION',true,true,'공기 공급 정상 작동 점검'];
-  const GAS    = ['가스 공급 GAS SUPPLY','FUNCTIONAL CONDITION',true,true,'가스 실린더 및 누설 점검'];
-  const ACC    = ['부속품 ACCESSORY','VISUAL',false,true,'부속품 상태 확인'];
-  return {
-    machine: {label:'공작기계', items:[BODY,
-      ['주축 (PRINCIPAL AXIS)','FUNCTIONAL CONDITION',true,false,'회전 상태 및 진동&소음 점검'],
-      ['절삭공구대 (TOOL POST)','FUNCTIONAL CONDITION',true,false,'공급 및 기능 정검'],
-      ['심압대 (TAILSTOCK)','FUNCTIONAL CONDITION',true,false,'접합부 연결 상태 점검'],
-      ['베드 BED','VISUAL & FUNCTIONAL CONDITION',true,true,'흠집,청결 및 기능 상태 점검'],
-      ['이송눈금 DIAL FEEDER','Accuracy',true,false,'다이얼 공급기 및 정확도 점검'],
-      ['기어박스 GEAR BOX','FUNCTIONAL CONDITION',true,false,'진동 소음 및 오일 점검'],
-      ['척 CHUCK','JOINT CONDITION',true,true,'작동 및 연결 상태 점검'],
-      SWITCH]},
-    plasma: {label:'플라즈마 절단기', items:[BODY, PGAUGE, WORK, CABLE, AIRCOOL,
-      ['노즐 및 전극 NOZZLE & ELECTRODE','FUNCTIONAL CONDITION',false,true,'노즐과 전극 교체 시기 점검'], GEAR, CLEAN, SWITCH]},
-    gouging: {label:'가우징 머신', items:[BODY, PGAUGE, WORK, CABLE, AIRCOOL,
-      ['가우징 로드 GOUGING ROD','FUNCTIONAL CONDITION',false,true,'가우징 로드 상태 점검'], GEAR, CLEAN, SWITCH]},
-    arc: {label:'아크 용접기', items:[BODY, AMMETER, WORK, CABLE,
-      ['자동전격방지기 AVRD','FUNCTIONAL CONDITION',true,false,'자동전격방지기 작동 여부'], CLEAN, SWITCH]},
-    tig: {label:'TIG 용접기', items:[BODY, AMMETER, WORK, CABLE,
-      ['냉각 시스템 COOLING SYSTEM','FUNCTIONAL CONDITION',true,false,'냉각수 공급 정상 작동 점검'], GAS,
-      ['토치 및 전극 TORCH & ELECTRODE','FUNCTIONAL CONDITION',false,true,'토치,노즐,텅스텐 오염상태 점검'], CLEAN, SWITCH]},
-    co2: {label:'CO2 용접기', items:[BODY, AMMETER, WORK, CABLE,
-      ['와이어 피더 WIRE FEEDER','FUNCTIONAL CONDITION',true,false,'와이어 피더 정상 작동 점검'], GAS,
-      ['토치 및 전극 TORCH & ELECTRODE','FUNCTIONAL CONDITION',false,true,'토치,노즐,피더 오염상태 점검'], CLEAN, SWITCH]},
-    compressor: {label:'컴프레서', items:[BODY, PGAUGE, WORK, CABLE,
-      ['에어 필터 AIR FILTER','FUNCTIONAL CONDITION',false,true,'에어 필터 청소 및 교체 점검'],
-      ['에어 공급 AIR SUPPLY','FUNCTIONAL CONDITION',true,true,'공기 배관 및 누설 점검'],
-      ['윤활유 LUBRICANT','FUNCTIONAL CONDITION',false,true,'윤활유 상태 및 교환 주기 점검'],
-      ['흡토출 밸브 VALVE','VISUAL',false,true,'흡,토출 밸브 교환 주기 점검'], SWITCH]},
-    oven: {label:'용접봉 건조로', items:[BODY, PGAUGE, WORK, CABLE,
-      ['내부 청소 INSIDE CLEANING','VISUAL',false,true,'내부 청소 상태']]},
-    hwrench: {label:'유압 렌치', items:[BODY,
-      ['허용압력 PRESSURE','FUNCTIONAL CONDITION',true,false,'정격 토크값과 최대 허용압력'],
-      ['작동 상태 WORKING CONDITION','FUNCTIONAL CONDITION',true,false,'작동 상태 확인 회전,토크 여부'],
-      ['유압호스 및 커넥터 상태','VISUAL',false,true,'호스,커넥터 등의 마모,누유,풀림 여부 확인'], ACC]},
-    pump: {label:'수중 모터 펌프', items:[BODY,
-      ['누수 상태 WATERPROOF','FUNCTIONAL CONDITION',true,false,'모터 누수 상태 및 마감 상태'],
-      ['작동 상태 WORKING CONDITION','FUNCTIONAL CONDITION',true,false,'펌프 상태 확인 정상 운전 여부'],
-      ['전원 케이블 및 배선','VISUAL',false,true,'전원 케이블 및 연결,손상상태'],
-      ['유량 상태 FLOW STATUS','VISUAL',true,false,'펌프 유량 상태 확인']]},
-    washer: {label:'고압 세척기', items:[BODY,
-      ['작동 상태 WORKING CONDITION','FUNCTIONAL CONDITION',true,false,'작동 상태 확인 회전,토크 여부'],
-      ['펌프 및 엔진 PUMP&ENGINE','FUNCTIONAL CONDITION',true,false,'오일 상태 확인 점검 및 교환'],
-      ['노즐 NOZZLE','VISUAL',false,true,'노즐 막힘 오염 점검 청소'], ACC,
-      ['압력 및 유량 PRESSURE & FLOW','FUNCTIONAL CONDITION',true,false,'압력 설정치 및 분사압력 확인']]},
-  };
-})();
-// 관리번호 → [기준표 종류, 영문 설비명, 번호 붙임 여부]. 정확한 번호가 접두어보다 우선.
-const INSP_MAP_EXACT = {
-  'SJ-OV-01': ['oven','DRY OVEN',false],
-  'SJ-EQ-13': ['pump','SUBMERSIBLE MOTOR PUMP',false],
-  'SJ-EQ-14': ['washer','HIGH PRESSURE WASHER',false],
-};
-const INSP_MAP_PREFIX = {
-  LT:['machine','LATHE'], ML:['machine','MILLING MACHINE'], DR:['machine','DRILLING MACHINE'],
-  PL:['plasma','PLASMA CUTTER'], GA:['gouging','GOUGING MACHINE'],
-  AC:['arc','ARC WELDING MACHINE'], TI:['tig','TIG WELDING MACHINE'], FC:['co2','CO2 WELDING MACHINE'],
-  CP:['compressor','COMPRESSOR'], HW:['hwrench','HYDRAULIC WRENCH'],
-};
-const INSP_MARKS = [['○','양호'],['△','수리'],['□','주유'],['×','교환']];
-const INSP_FORM_NO = '(양식 /Form 14-01-07) REV.4';
-
-function inspInfo(e){
-  if(!e || e.status==='폐기') return null;
-  const ex = INSP_MAP_EXACT[e.id];
-  if(ex) return {tpl:ex[0], ...INSP_TEMPLATES[ex[0]], nameEn:ex[1]};
-  const m = e.id.match(/^SJ-([A-Z]+)-(\d+)$/);
-  const p = m && INSP_MAP_PREFIX[m[1]];
-  if(!p) return null;
-  return {tpl:p[0], ...INSP_TEMPLATES[p[0]], nameEn:`${p[1]} -${Number(m[2])}`};
-}
+/* ── 월간 점검 — 기준표 항목·대상 판별은 insp-shared.js (폰 점검 페이지와 공용) ── */
 const inspTargets = () => Store.equipment.filter(e=>inspInfo(e)).sort((a,b)=>a.id.localeCompare(b.id));
 const inspRecords = (eqId) => Store.maintenance.filter(m=>m.equipmentId===eqId && m.type==='월간점검' && m.inspection);
 // 해당 월(YYYY-MM)의 기록 — 같은 달에 여러 건이면 가장 최근 수정본
 const inspOf = (eqId, ym) => inspRecords(eqId).filter(m=>(m.date||'').startsWith(ym))
   .sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''))[0];
 const thisMonth = () => todayISO().slice(0,7);
-const inspSummary = rec => {
-  const r = rec.inspection.results||[];
-  const bad = r.filter(x=>x && x!=='○').length;
-  return bad ? `이상 ${bad}건 (${INSP_MARKS.filter(([s])=>r.includes(s) && s!=='○').map(([s,l])=>`${s}${l} ${r.filter(x=>x===s).length}`).join(', ')})` : '전 항목 양호';
-};
 
 // 다른 기기에서 입력한 점검 결과를 보려면 maintenance 를 다시 읽어야 한다(실시간 구독 대상이 아님)
 let _inspReloadAt = 0;
@@ -1584,6 +1495,7 @@ function inspRefresh(){
 
 /* 점검 현황 */
 route('#/inspection', ()=>{
+  if(!Auth.isAdmin()) return `<div class="p-6">관리자만 가능합니다.</div>`;
   inspRefresh();
   const params = new URLSearchParams(_jbPath.split('?')[1]||'');
   const ym = /^\d{4}-\d{2}$/.test(params.get('m')||'') ? params.get('m') : thisMonth();
@@ -1603,9 +1515,21 @@ route('#/inspection', ()=>{
       <h1 class="text-2xl font-bold">📋 월간 점검</h1>
       <div class="flex gap-2 items-center flex-wrap">
         <input id="insp-month" type="month" value="${ym}" max="${thisMonth()}" class="border rounded-lg px-2 py-1.5" />
+        ${isCurrent?`<a href="#/inspection/batch" class="bg-emerald-600 text-white px-4 py-2 rounded-lg">✏️ 일괄 점검 입력</a>`:''}
         <button onclick="printInspection(null, '${ym.slice(0,4)}')" class="bg-slate-600 text-white px-4 py-2 rounded-lg">🖨 ${ym.slice(0,4)}년 기준표 전체 인쇄</button>
       </div>
     </div>
+    <details class="bg-white rounded-xl shadow-sm p-3 mb-3 text-sm">
+      <summary class="cursor-pointer font-semibold">📱 현장 점검은 폰으로 — 점검 페이지 열기</summary>
+      <div class="flex flex-wrap gap-4 items-center mt-3">
+        <img src="${qrUrl(location.origin+'/inspect.html')}" class="w-28 h-28 rounded border bg-white" />
+        <div class="text-slate-500 space-y-1">
+          <div>폰 카메라로 이 QR을 찍어 점검 페이지를 열고 홈 화면에 추가해 두세요. 로그인 없이 이름만 적으면 됩니다.</div>
+          <div>페이지 안의 <b>📷 QR 스캔</b>으로 장비 라벨을 찍으면 그 장비 점검표가 열립니다.</div>
+          <a href="inspect.html" target="_blank" class="text-blue-600 underline">${escH(location.origin)}/inspect.html</a>
+        </div>
+      </div>
+    </details>
     <div class="bg-white rounded-xl shadow-sm p-4 mb-3">
       <div class="flex justify-between text-sm mb-1"><span class="font-semibold">${ym.replace('-','년 ')}월 점검</span><span><b>${done.length}</b> / ${targets.length}대 완료 (${pct}%)</span></div>
       <div class="h-2 rounded bg-slate-200 overflow-hidden"><div class="h-2 bg-emerald-500" style="width:${pct}%"></div></div>
@@ -1622,11 +1546,9 @@ route('#/inspection', ()=>{
         const bad = rec && (rec.inspection.results||[]).some(x=>x!=='○');
         return `<div class="flex flex-wrap items-center gap-2 px-4 py-2.5 border-t text-sm">
           <span class="w-5">${rec?(bad?'⚠️':'✅'):'⬜'}</span>
-          <a href="#/equipment/${e.id}" class="font-semibold min-w-[150px]">${escH(e.type||'')}</a>
+          <a href="#/inspection/${e.id}${isCurrent?'':'?m='+ym}" class="font-semibold min-w-[150px]" title="점검 내용 보기">${escH(e.type||'')}</a>
           <span class="text-xs text-slate-500 w-20">${e.id}</span>
-          <span class="text-xs text-slate-500 flex-1 min-w-[160px]">${rec?`${fmt(rec.date)} · ${escH(rec.inspector||'')} · ${inspSummary(rec)}`:'미점검'}</span>
-          ${isCurrent?`<a href="#/inspection/${e.id}" class="${rec?'bg-slate-200':'bg-emerald-600 text-white'} px-3 py-1 rounded-lg text-xs">${rec?'수정':'점검하기'}</a>`
-            : rec?`<a href="#/inspection/${e.id}?m=${ym}" class="bg-slate-200 px-3 py-1 rounded-lg text-xs">보기</a>`:''}
+          <span class="text-xs text-slate-500 flex-1 min-w-[160px]">${rec?`${fmt(rec.date)} · ${escH(rec.inspector||'')}${rec.inspection.via==='mobile'?' 📱':''} · ${inspSummary(rec)}`:'미점검'}</span>
           <button onclick="printInspection('${e.id}', '${ym.slice(0,4)}')" class="text-xs text-slate-500 underline">인쇄</button>
         </div>`;
       }).join('')}
@@ -1634,8 +1556,99 @@ route('#/inspection', ()=>{
   </div>`;
 });
 
+/* PC 일괄 입력 — 종이에 점검한 결과를 장비 종류별 표 하나로 옮겨 적는다. 이번 달만. */
+route('#/inspection/batch', ()=>{
+  if(!Auth.isAdmin()) return `<div class="p-6">관리자만 가능합니다.</div>`;
+  inspRefresh();
+  const params = new URLSearchParams(_jbPath.split('?')[1]||'');
+  const targets = inspTargets();
+  const groups = {};
+  targets.forEach(e=>{ (groups[inspInfo(e).tpl] ||= []).push(e); });
+  const tpl = groups[params.get('t')] ? params.get('t') : Object.keys(INSP_TEMPLATES).find(k=>groups[k]);
+  if(!tpl) return `<div class="p-6">점검 대상 장비가 없습니다.</div>`;
+  const t = INSP_TEMPLATES[tpl], list = groups[tpl], ym = thisMonth();
+  const shortName = s => s.replace(/\s*[\(A-Z].*$/,'') || s;
+  setTimeout(()=>{
+    const tb = document.getElementById('batch-table'); if(!tb) return;
+    const markDirty = r => tb.querySelector(`tr[data-r="${r}"]`).dataset.dirty = '1';
+    tb.querySelectorAll('select, input').forEach(el=>el.addEventListener('change', ()=>markDirty(el.dataset.r)));
+    tb.querySelectorAll('[data-allok]').forEach(b=>b.onclick = ()=>{
+      const r = b.dataset.allok;
+      tb.querySelectorAll(`select[data-r="${r}"]`).forEach(s=>{ if(!s.value) s.value = '○'; });
+      markDirty(r);
+    });
+    document.getElementById('batch-save').onclick = ()=>{
+      const date = document.getElementById('batch-date').value;
+      const inspector = document.getElementById('batch-inspector').value.trim();
+      if(!date.startsWith(ym) || date > todayISO()){ alert('점검일은 이번 달, 오늘까지만 고를 수 있습니다.'); return; }
+      const rows = [...tb.querySelectorAll('tr[data-dirty="1"]')];
+      if(!rows.length){ alert('바뀐 행이 없습니다.'); return; }
+      const jobs = [], errs = [];
+      for(const tr of rows){
+        const e = list[Number(tr.dataset.r)];
+        const results = [...tr.querySelectorAll('select')].map(s=>s.value);
+        const action = tr.querySelector('input[data-f="action"]').value.trim();
+        if(results.every(x=>!x) && !action) continue;     // 손댔다가 모두 지운 행
+        const err = inspValidate({info:t, results, action, inspector});
+        if(err){ errs.push(`${e.type} (${e.id}): ${err}`); continue; }
+        jobs.push({e, results, action});
+      }
+      if(errs.length){ alert('저장하지 못한 행이 있습니다. 고친 뒤 다시 저장하세요.\n\n'+errs.join('\n')); return; }
+      if(!jobs.length){ alert('저장할 행이 없습니다.'); return; }
+      if(!confirm(`${t.label} ${jobs.length}대의 ${ym.replace('-','년 ')}월 점검 결과를 저장할까요?\n점검일 ${date} · 점검자 ${inspector}`)) return;
+      for(const {e, results, action} of jobs){
+        const doc = inspBuildDoc({equipmentId:e.id, info:inspInfo(e), results, action, date, inspector, performerId:Auth.current?.employeeId});
+        const rec = inspOf(e.id, ym);
+        if(rec) Store.update('maintenance', rec.id, doc); else Store.add('maintenance', doc);
+      }
+      alert(`${jobs.length}대 저장했습니다.`);
+      jbRender();
+    };
+  });
+  return `
+  <div>
+    <a href="#/inspection" class="text-sm text-blue-600">← 점검 현황</a>
+    <h1 class="text-2xl font-bold mt-1 mb-1">✏️ 일괄 점검 입력 <span class="text-base font-normal text-slate-500">${ym.replace('-','년 ')}월</span></h1>
+    <p class="text-sm text-slate-500 mb-3">점검한 결과를 장비 종류별로 한 번에 옮겨 적습니다. 바꾼 행만 저장되고, 이미 입력된 장비는 기존 결과가 채워져 있습니다.</p>
+    <div class="flex flex-wrap gap-1 mb-3">
+      ${Object.keys(INSP_TEMPLATES).filter(k=>groups[k]).map(k=>{
+        const d = groups[k].filter(e=>inspOf(e.id, ym)).length;
+        return `<a href="#/inspection/batch?t=${k}" class="px-3 py-1.5 rounded-lg text-sm border ${k===tpl?'bg-slate-900 text-white':'bg-white'}">${INSP_TEMPLATES[k].label} <span class="text-xs opacity-70">${d}/${groups[k].length}</span></a>`;
+      }).join('')}
+    </div>
+    <div class="bg-white rounded-xl shadow-sm p-3 mb-3 flex flex-wrap gap-3 items-end text-sm">
+      <label>점검일<input id="batch-date" type="date" value="${todayISO()}" min="${ym}-01" max="${todayISO()}" class="block border rounded px-3 py-1.5 mt-1" /></label>
+      <label>점검자<input id="batch-inspector" value="${escH(Auth.current?.name||'')}" class="block border rounded px-3 py-1.5 mt-1" /></label>
+      <span class="text-xs text-slate-400">○ 양호 · △ 수리 · □ 주유 · × 교환 — 수리·교환이 있으면 조치사항 필수</span>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm overflow-x-auto">
+      <table id="batch-table" class="w-full text-xs">
+        <thead class="bg-slate-50 text-slate-500"><tr>
+          <th class="p-2 text-left sticky left-0 bg-slate-50">장비</th>
+          ${t.items.map((it,i)=>`<th class="p-1 text-center min-w-[54px]" title="${escH(it[0])} — ${escH(it[4])}">${i+1}<div class="font-normal">${escH(shortName(it[0]))}</div></th>`).join('')}
+          <th class="p-2 text-left min-w-[180px]">조치사항</th><th class="p-2"></th><th class="p-2 text-left">이번 달</th>
+        </tr></thead>
+        <tbody>${list.map((e,r)=>{
+          const rec = inspOf(e.id, ym);
+          const res = rec ? rec.inspection.results : [];
+          return `<tr data-r="${r}" class="border-t">
+            <td class="p-2 whitespace-nowrap sticky left-0 bg-white"><b>${escH(e.type||'')}</b><div class="text-slate-400">${e.id}</div></td>
+            ${t.items.map((_,c)=>`<td class="p-1 text-center"><select data-r="${r}" class="border rounded px-1 py-1 text-sm">
+              <option value=""></option>${INSP_MARKS.map(([s])=>`<option ${res[c]===s?'selected':''}>${s}</option>`).join('')}</select></td>`).join('')}
+            <td class="p-1"><input data-r="${r}" data-f="action" value="${escH(rec?.inspection.action||'')}" class="w-full border rounded px-2 py-1" /></td>
+            <td class="p-1"><button type="button" data-allok="${r}" class="text-xs whitespace-nowrap px-2 py-1 rounded border" title="빈 칸을 ○로 채움">빈칸 ○</button></td>
+            <td class="p-2 whitespace-nowrap text-slate-500">${rec?`${fmt(rec.date).slice(5)} ${escH(rec.inspector||'')}`:'미점검'}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>
+    <div class="text-right mt-3"><button id="batch-save" class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-semibold">바꾼 행 저장</button></div>
+  </div>`;
+});
+
 /* 점검 입력 / 보기 */
 route('#/inspection/:id', ({id})=>{
+  if(!Auth.isAdmin()) return `<div class="p-6">관리자만 가능합니다.</div>`;
   const e = Store.getById('equipment', id);
   const info = inspInfo(e);
   if(!info) return `<div class="p-8">월간 점검 대상이 아닌 장비입니다. <a href="#/inspection" class="text-blue-600">← 점검 현황</a></div>`;
@@ -1657,17 +1670,11 @@ route('#/inspection/:id', ({id})=>{
     f.onsubmit = ev=>{
       ev.preventDefault();
       const fd = Object.fromEntries(new FormData(f).entries());
-      const left = results.filter(x=>!x).length;
-      if(left){ alert(`아직 결과를 고르지 않은 항목이 ${left}개 있습니다.`); return; }
-      if(!fd.inspector.trim()){ alert('점검자를 입력하세요.'); return; }
+      const err = inspValidate({info, results, action:fd.action, inspector:fd.inspector});
+      if(err){ alert(err); return; }
       if(!fd.date.startsWith(thisMonth()) || fd.date > todayISO()){ alert('점검일은 이번 달, 오늘까지만 고를 수 있습니다.'); return; }
-      if(results.some(x=>x==='△'||x==='×') && !fd.action.trim()){ alert('수리(△)·교환(×) 항목이 있으면 조치사항을 적어 주세요.'); return; }
-      const doc = {
-        equipmentId:id, type:'월간점검', date:fd.date, inspector:fd.inspector.trim(),
-        performerId: Auth.current?.employeeId || fd.inspector.trim(),
-        note: fd.action.trim(), partsReplaced:'', cost:0,
-        inspection:{tpl:info.tpl, items:info.items.map(it=>it[0]), results:[...results], action:fd.action.trim()},
-      };
+      const doc = inspBuildDoc({equipmentId:id, info, results, action:fd.action.trim(), date:fd.date,
+        inspector:fd.inspector.trim(), performerId:Auth.current?.employeeId});
       if(rec) Store.update('maintenance', rec.id, doc); else Store.add('maintenance', doc);
       if(fd.location.trim() !== (e.location||'')) Store.update('equipment', id, {location: fd.location.trim()});
       jbNavigate('#/inspection');
