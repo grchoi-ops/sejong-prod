@@ -2069,8 +2069,8 @@ route('#/qr-print', ()=>{
         .sid{font-size:7px;font-family:monospace;color:#666;margin-top:1px}
         .qr-svg svg{width:100%;height:100%;display:block}`;
       } else {
-        // 대형: 90×65mm — 좌: 장비 정보·관리책임자·정기검사 주기 / 우: 점검 페이지 QR(H, 28mm)
-        // 책임자·주기가 비어 있으면 손으로 적을 수 있게 밑줄 칸으로 둔다. 날짜(차기 검사일)는 넣지 않는다 — 매년 라벨을 갈지 않도록.
+        // 대형: 90×65mm — 좌: 장비 정보·관리책임자 / 우: 점검 페이지 QR(H, 30mm)
+        // 책임자가 비어 있으면 손으로 적을 수 있게 밑줄 칸으로 둔다. 검사 주기·날짜는 넣지 않는다 — 바뀌어도 라벨을 갈지 않도록.
         const blank = '<span class="blank"></span>';
         labels = labelData.map(e=>{
           const qrImg = `<div class="qr-svg">${qrs[e.id]}</div>`;
@@ -2082,9 +2082,7 @@ route('#/qr-print', ()=>{
               <div class="row"><span class="k">관리번호</span><span class="id-val">${e.id}</span></div>
               ${e.serial?`<div class="row"><span class="k">모델명</span><span class="v">${escH(e.serial)}</span></div>`:''}
               <div class="row"><span class="k">관리책임자</span><span class="v"><span class="pos">정</span>${e.managerPrimary?escH(e.managerPrimary):blank}</span></div>
-              <div class="row"><span class="k"></span><span class="v"><span class="pos">부</span>${e.managerSecondary?escH(e.managerSecondary):blank}</span></div>
-              <div class="row"><span class="k">정기검사 주기</span><span class="v">${e.inspectionCycleMonths?`${Number(e.inspectionCycleMonths)}개월`:blank}</span></div>
-            </div>
+              <div class="row"><span class="k"></span><span class="v"><span class="pos">부</span>${e.managerSecondary?escH(e.managerSecondary):blank}</span></div>            </div>
             <div class="qr-block">
               ${qrImg}
               <div class="qr-sub">${e.id}</div>
