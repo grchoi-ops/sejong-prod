@@ -1,0 +1,5 @@
+{
+  "redirects": [
+    { "source": "/e/:id", "destination": "/inspect.html?id=:id", "permanent": false }
+  ]
+}

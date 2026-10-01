@@ -65,6 +65,18 @@ function resetSupaClient(){ _supaClient = null; SupaStore.enabled = false; }
 
 const BUCKET = 'equipment-photos';
 function qrUrl(id){ return 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&margin=4&data='+encodeURIComponent(id); }
+// 대형 라벨 QR 에 넣는 주소의 앞부분. "/e/관리번호" 는 vercel.json 에서 폰 점검 페이지로 넘겨 준다.
+// 시스템을 옮기면(회사 도메인·통합 플랫폼) 이 값과 넘겨 주는 곳만 바꾸면 되고, 붙은 라벨은 그대로 쓴다.
+const JB_LABEL_QR_BASE = 'https://sejong-prod.vercel.app';
+const labelQrText = id => `${JB_LABEL_QR_BASE}/e/${encodeURIComponent(id)}`;
+// 인쇄용 QR — 오류 복원 H(30%), 표준 여백 4칸, 벡터(SVG). index.html 에 로드된 qrcode-generator 사용.
+// (기존 api.qrserver.com 이미지는 복원 등급 기본값 L(7%)이고 120px 저해상도라 인쇄에는 쓰지 않는다)
+function qrSvg(text){
+  const qr = window.qrcode(0, 'H');      // 0 = 데이터 길이에 맞춰 버전 자동
+  // 관리번호처럼 대문자·숫자·-만 있으면 영숫자 모드 → 같은 크기에서 칸이 더 굵다
+  qr.addData(text, /^[0-9A-Z $%*+\-./:]+$/.test(text) ? 'Alphanumeric' : 'Byte'); qr.make();
+  return qr.createSvgTag({cellSize:4, margin:16, scalable:true});   // margin 은 px → 4칸(4px×4)
+}
 
 /* ── SupaStore ── */
 const SupaStore = {
@@ -477,6 +489,16 @@ const collectCerts = fd => [...new Set([
   ...String(fd.get('newCerts')||'').split(',').map(s=>s.trim()),
 ].filter(Boolean))];
 
+/* ── 관리책임자 (정/부) — 메인 앱 직원 관리(state.employees)에서 고른다. 장비에는 이름으로 저장 ── */
+const jbEmployees = () => (window.state?.employees||[]).filter(x=>x?.name)
+  .slice().sort((a,b)=>(a.div||'').localeCompare(b.div||'') || a.name.localeCompare(b.name));
+const managerSelect = (name, cur, cls) => {
+  const emps = jbEmployees();
+  const extra = cur && !emps.some(x=>x.name===cur) ? `<option selected>${escH(cur)}</option>` : '';   // 직원 목록에서 빠진 이름도 유지
+  return `<select name="${name}" class="${cls}"><option value="">— 없음 —</option>${extra}
+    ${emps.map(x=>`<option value="${escH(x.name)}" ${x.name===cur?'selected':''}>${escH(x.name)}${x.div?` (${escH(x.div)})`:''}</option>`).join('')}</select>`;
+};
+
 // 목록 화면의 체크 선택 — 다시 그려도(실시간 동기화 포함) 유지되도록 모듈 변수에 둔다.
 const _eqSel = new Set();
 
@@ -546,6 +568,18 @@ route('#/equipment', ()=>{
     syncSelUI();
 
     window.clearEqSel = ()=>{ _eqSel.clear(); jbRender(); };
+    // 선택한 장비의 관리책임자 정/부 지정. 고르지 않은 쪽(빈칸)은 그대로 둔다.
+    window.bulkManager = ()=>{
+      const ids = [..._eqSel].filter(id=>Store.getById('equipment', id));
+      const p = document.querySelector('#cert-bar [name=managerPrimary]').value;
+      const s = document.querySelector('#cert-bar [name=managerSecondary]').value;
+      if(!ids.length) return;
+      if(!p && !s){ alert('지정할 관리책임자(정 또는 부)를 고르세요.'); return; }
+      if(!confirm(`선택한 ${ids.length}건의 관리책임자를 지정할까요?\n${p?`정: ${p}`:''}${p&&s?' / ':''}${s?`부: ${s}`:''}`)) return;
+      ids.forEach(id=>Store.update('equipment', id, {...(p?{managerPrimary:p}:{}), ...(s?{managerSecondary:s}:{})}));
+      alert(`${ids.length}건 지정했습니다.`);
+      jbRender();
+    };
     // op: 'add' | 'remove' | 'clear'(모든 인증 제거 → 미인증)
     window.bulkCert = (op)=>{
       const ids = [..._eqSel].filter(id=>Store.getById('equipment', id));
@@ -678,6 +712,12 @@ route('#/equipment', ()=>{
       <button onclick="bulkCert('remove')" class="bg-white border border-indigo-300 text-indigo-700 px-3 py-1.5 rounded-lg">− 인증 제거</button>
       <button onclick="bulkCert('clear')" class="bg-white border px-3 py-1.5 rounded-lg">미인증으로</button>
       <button onclick="clearEqSel()" class="text-xs text-slate-500 underline ml-auto">선택 해제</button>
+      <div class="basis-full flex flex-wrap gap-2 items-center pt-2 border-t border-indigo-200">
+        <span class="font-semibold">관리책임자</span>
+        <span>정</span>${managerSelect('managerPrimary', '', 'border rounded-lg px-2 py-1.5 bg-white')}
+        <span>부</span>${managerSelect('managerSecondary', '', 'border rounded-lg px-2 py-1.5 bg-white')}
+        <button onclick="bulkManager()" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg">지정</button>
+      </div>
     </div>`:''}
     <div class="bg-white rounded-xl shadow-sm overflow-hidden">
       <div class="flex items-center bg-slate-50 text-xs font-semibold text-slate-500">
@@ -800,6 +840,7 @@ route('#/equipment/:id', ({id})=>{
             <dt style="color:var(--text-muted,#999);">모델명</dt><dd>${e.serial||'-'}</dd>
             <dt style="color:var(--text-muted,#999);">구입일</dt><dd>${fmt(e.purchaseDate)||'-'}</dd>
             <dt style="color:var(--text-muted,#999);">점검주기</dt><dd>${e.inspectionCycleMonths?e.inspectionCycleMonths+'개월':'-'}</dd>
+            <dt style="color:var(--text-muted,#999);">관리책임자</dt><dd>정 ${escH(e.managerPrimary||'-')} · 부 ${escH(e.managerSecondary||'-')}</dd>
             <dt style="color:var(--text-muted,#999);">다음점검</dt><dd>${fmt(e.nextInspectionDate)||'-'}</dd>
             ${e.status==='출장중'?`
             <dt style="color:var(--text-muted,#999);">현장</dt><dd>${site?.name||'-'}</dd>
@@ -1312,6 +1353,8 @@ function equipmentEdit(eq){
       <label class="block">구입일<input type="date" name="purchaseDate" value="${fmt(eq?.purchaseDate)}" class="w-full border rounded px-3 py-2 mt-1" /></label>
       <label class="block">점검주기(개월)<input type="number" name="inspectionCycleMonths" value="${eq?.inspectionCycleMonths||12}" class="w-full border rounded px-3 py-2 mt-1" /></label>
       <label class="block">다음점검일<input type="date" name="nextInspectionDate" value="${fmt(eq?.nextInspectionDate)}" class="w-full border rounded px-3 py-2 mt-1" /></label>
+      <label class="block">관리책임자 (정)${managerSelect('managerPrimary', eq?.managerPrimary||'', 'w-full border rounded px-3 py-2 mt-1')}</label>
+      <label class="block">관리책임자 (부)${managerSelect('managerSecondary', eq?.managerSecondary||'', 'w-full border rounded px-3 py-2 mt-1')}</label>
       <label class="block">상태<select name="status" class="w-full border rounded px-3 py-2 mt-1">${['사내','출장중','정비중','분실','폐기'].map(s=>`<option ${eq?.status===s?'selected':''}>${s}</option>`).join('')}</select></label>
       <label class="block">유형<select name="mobility" class="w-full border rounded px-3 py-2 mt-1"><option value="portable" ${(eq?.mobility||'portable')==='portable'?'selected':''}>이동장비 (출고 가능)</option><option value="fixed" ${eq?.mobility==='fixed'?'selected':''}>📌 고정설비</option></select></label>
       <div class="block col-span-2">인증 <span class="text-xs text-slate-400">(여러 개 선택 가능, 없으면 미인증)</span>${certInputs(certsOf(eq))}</div>
@@ -1666,17 +1709,25 @@ route('#/qr-print', ()=>{
   if(!Auth.isAdmin()) return `<div class="p-6">관리자만</div>`;
   const list = Store.equipment.filter(e=>e.status!=='폐기');
   setTimeout(async ()=>{
-    function doPrint(size){
+    async function doPrint(size){
       const sel = [...document.querySelectorAll('.label-chk:checked')].map(x=>x.value);
       const target = sel.length ? sel : list.map(e=>e.id);
       const labelData = target.map(id=>Store.getById('equipment',id)).filter(Boolean);
       const logoHtml = window._jbLogoDataUrl ? `<img src="${window._jbLogoDataUrl}" class="logo" />` : '';
+      if(typeof window.qrcode !== 'function'){ alert('QR 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.'); return; }
+      // QR 을 만드는 동안(비동기) 창을 늦게 열면 팝업 차단에 걸리므로 클릭 즉시 연다
+      const w = window.open('','_blank','width=860,height=1200');
+      if(!w){ alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
+      w.document.write('<p style="font-family:sans-serif">라벨 만드는 중...</p>');
+      // 대형은 점검 페이지 주소(폰 기본 카메라로 바로 열림), 소형은 관리번호만(작은 QR 에서도 칸이 굵게)
+      const qrs = {};
+      for(const e of labelData) qrs[e.id] = qrSvg(size==='small' ? e.id : labelQrText(e.id));
 
       let labels, css;
       if(size === 'small'){
         // 소형: 40×30mm — QR 좌측 + 장비명·스펙·관리번호·로고 우측
         labels = labelData.map(e=>{
-          const qrImg = `<img src="${(e.qrUrl||qrUrl(e.id))}" style="width:18mm;height:18mm;display:block;" />`;
+          const qrImg = `<div class="qr-svg" style="width:18mm;height:18mm;">${qrs[e.id]}</div>`;
           const logoS = window._jbLogoDataUrl ? `<img src="${window._jbLogoDataUrl}" style="width:100%;max-width:15mm;margin-top:2px;display:block;" />` : '';
           return `<div class="label">
             <div class="qr-s">${qrImg}</div>
@@ -1698,18 +1749,24 @@ route('#/qr-print', ()=>{
         .info-s{flex:1;padding:2mm 2mm 2mm 0;display:flex;flex-direction:column;justify-content:flex-start;padding-top:2mm;gap:1px;overflow:hidden;border-left:1px solid #eee}
         .sname{font-size:10px;font-weight:900;color:#111;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .sspec{font-size:8px;font-weight:600;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-        .sid{font-size:7px;font-family:monospace;color:#666;margin-top:1px}`;
+        .sid{font-size:7px;font-family:monospace;color:#666;margin-top:1px}
+        .qr-svg svg{width:100%;height:100%;display:block}`;
       } else {
-        // 대형: 90×65mm
+        // 대형: 90×65mm — 좌: 장비 정보·관리책임자·정기검사 주기 / 우: 점검 페이지 QR(H, 28mm)
+        // 책임자·주기가 비어 있으면 손으로 적을 수 있게 밑줄 칸으로 둔다. 날짜(차기 검사일)는 넣지 않는다 — 매년 라벨을 갈지 않도록.
+        const blank = '<span class="blank"></span>';
         labels = labelData.map(e=>{
-        const qrImg = `<img src="${(e.qrUrl||qrUrl(e.id))}" style="width:70px;height:70px;display:block;" />`;
+          const qrImg = `<div class="qr-svg">${qrs[e.id]}</div>`;
           return `<div class="label">
             <div class="info">
-              <div class="name">${e.type||''}</div>
-              ${e.spec?`<div class="spec">${e.spec}</div>`:''}
+              <div class="name">${escH(e.type||'')}</div>
+              ${e.spec?`<div class="spec">${escH(e.spec)}</div>`:''}
               <div class="divider"></div>
-              <div class="id-row"><span class="id-label">관리번호&nbsp;</span><span class="id-val">${e.id}</span></div>
-              ${e.serial?`<div class="model-row"><span class="id-label">모델명&nbsp;</span><span class="model-val">${e.serial}</span></div>`:''}
+              <div class="row"><span class="k">관리번호</span><span class="id-val">${e.id}</span></div>
+              ${e.serial?`<div class="row"><span class="k">모델명</span><span class="v">${escH(e.serial)}</span></div>`:''}
+              <div class="row"><span class="k">관리책임자</span><span class="v"><span class="pos">정</span>${e.managerPrimary?escH(e.managerPrimary):blank}</span></div>
+              <div class="row"><span class="k"></span><span class="v"><span class="pos">부</span>${e.managerSecondary?escH(e.managerSecondary):blank}</span></div>
+              <div class="row"><span class="k">정기검사 주기</span><span class="v">${e.inspectionCycleMonths?`${Number(e.inspectionCycleMonths)}개월`:blank}</span></div>
             </div>
             <div class="qr-block">
               ${qrImg}
@@ -1724,31 +1781,32 @@ route('#/qr-print', ()=>{
         .wrap{display:flex;flex-wrap:wrap;gap:3mm}
         .label{width:90mm;height:65mm;border:1.5px solid #bbb;border-radius:4px;display:flex;
                box-sizing:border-box;overflow:hidden;break-inside:avoid;background:#fff}
-        .info{flex:1;padding:4mm 3mm 4mm 5mm;display:flex;flex-direction:column;justify-content:center;gap:3px;overflow:hidden}
-        .name{font-size:20px;font-weight:900;color:#111;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-        .spec{font-size:13px;font-weight:600;color:#333}
-        .divider{height:1px;background:#ddd;margin:3px 0}
-        .id-row{display:flex;align-items:baseline;}
-        .model-row{display:flex;align-items:baseline;}
-        .id-label{font-size:9px;color:#aaa;white-space:nowrap}
-        .id-val{font-size:14px;font-weight:700;color:#111;font-family:monospace}
-        .model-val{font-size:12px;font-weight:500;color:#444}
-        .qr-block{width:28mm;background:#f8f8f8;border-left:1px solid #e8e8e8;
+        .info{flex:1;min-width:0;padding:4mm 2mm 4mm 4mm;display:flex;flex-direction:column;justify-content:center;gap:3px;overflow:hidden}
+        .name{font-size:21px;font-weight:900;color:#111;line-height:1.15;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:keep-all}
+        .spec{font-size:14px;font-weight:600;color:#333}
+        .divider{height:1px;background:#ccc;margin:3px 0}
+        .row{display:flex;align-items:baseline;gap:4px;min-height:19px}
+        .k{font-size:10px;color:#777;white-space:nowrap;width:17mm;flex-shrink:0}
+        .v{font-size:14px;font-weight:600;color:#222;line-height:1.15;display:flex;align-items:baseline;flex:1;min-width:0;overflow:hidden}
+        .pos{font-size:10px;color:#777;margin-right:5px}
+        .blank{display:inline-block;flex:1;min-width:20mm;border-bottom:1px solid #888;height:14px}
+        .id-val{font-size:15px;font-weight:700;color:#111;font-family:monospace}
+        .qr-block{width:34mm;background:#fff;border-left:1px solid #e8e8e8;
                   display:flex;flex-direction:column;align-items:center;justify-content:center;
-                  flex-shrink:0;padding:3mm;gap:2px}
-        .qr-sub{font-size:7px;color:#888;text-align:center;word-break:break-all;line-height:1.3}
-        .logo{width:100%;max-width:26mm;margin-top:3mm}`;
+                  flex-shrink:0;padding:2mm;gap:1px}
+        .qr-svg{width:30mm;height:30mm}
+        .qr-svg svg{width:100%;height:100%;display:block}
+        .qr-sub{font-size:8px;color:#555;text-align:center;font-family:monospace;line-height:1.2}
+        .logo{width:100%;max-width:24mm;margin-top:2mm}`;
       }
       const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>장비 라벨</title>
       <style>${css}</style></head><body>
         <div class="wrap">${labels}</div>
       </body></html>`;
-      const w = window.open('','_blank','width=860,height=1200');
-      if(!w){ alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
-      w.document.write(html); w.document.close();
+      w.document.open(); w.document.write(html); w.document.close();
     }
-    document.getElementById('btn-print-large').onclick = ()=> doPrint('large');
-    document.getElementById('btn-print-small').onclick = ()=> doPrint('small');
+    document.getElementById('btn-print-large').onclick = ()=> doPrint('large').catch(err=>alert('라벨을 만들지 못했습니다: '+err.message));
+    document.getElementById('btn-print-small').onclick = ()=> doPrint('small').catch(err=>alert('라벨을 만들지 못했습니다: '+err.message));
   });
   return `
   <div>
