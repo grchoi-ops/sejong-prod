@@ -753,8 +753,9 @@ route('#/equipment/:id', ({id})=>{
     });
   });
   Store.byEqId('auditLogs', id)
-    // cert_change(인증 변경)는 내부 관리용이라 기록만 남기고 타임라인에는 띄우지 않는다
-    .filter(a=>['lost','found','status_change'].includes(a.action))
+    // cert_change(인증 변경)는 내부 관리용이라 기록만 남기고 타임라인에는 띄우지 않는다.
+    // "다음 점검일 갱신"도 정비 항목의 "다음점검:"과 겹치므로 띄우지 않는다.
+    .filter(a=>['lost','found','status_change'].includes(a.action) && !String(a.detail||'').startsWith('다음 점검일 갱신'))
     .forEach(a=>{
       const iconMap = {lost:'🔴', found:'🟢', status_change:'🔄'};
       events.push({
