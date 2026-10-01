@@ -2069,7 +2069,7 @@ route('#/qr-print', ()=>{
 
       let labels, css;
       if(size === 'small'){
-        // 소형: 40×30mm(크기 유지) — QR 26mm 좌측 + 장비명·스펙·관리번호·로고 우측 좁은 칸
+        // 소형: 40×30mm(크기 유지) — QR 21mm 좌측(칸 0.51mm) + 장비명·스펙·관리번호·로고 우측(예전 배치)
         labels = labelData.map(e=>{
           const qrImg = `<div class="qr-svg">${qrs[e.id]}</div>`;
           const logoS = window._jbLogoDataUrl ? `<img src="${window._jbLogoDataUrl}" class="slogo" />` : '';
@@ -2089,14 +2089,14 @@ route('#/qr-print', ()=>{
         .wrap{display:flex;flex-wrap:wrap;gap:2mm}
         .label{width:40mm;height:30mm;border:1.5px solid #bbb;border-radius:3px;display:flex;
                align-items:center;box-sizing:border-box;overflow:hidden;break-inside:avoid;background:#fff}
-        .qr-s{padding:1.5mm 0 1.5mm 1.5mm;flex-shrink:0}
-        .qr-svg{width:26mm;height:26mm}
+        .qr-s{padding:1.5mm;flex-shrink:0}
+        .qr-svg{width:21mm;height:21mm}
         .qr-svg svg{width:100%;height:100%;display:block}
-        .info-s{flex:1;min-width:0;height:100%;box-sizing:border-box;padding:2mm 1.2mm 1.5mm 1.2mm;display:flex;flex-direction:column;gap:1px;overflow:hidden}
-        .sname{font-size:8px;font-weight:900;color:#111;line-height:1.15;overflow:hidden;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical}
-        .sspec{font-size:6.5px;font-weight:600;color:#444;line-height:1.15;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-        .sid{font-size:6px;font-family:monospace;color:#555;margin-top:1px;word-break:break-all;line-height:1.1}
-        .slogo{width:100%;max-width:10mm;margin-top:auto;display:block}`;
+        .info-s{flex:1;min-width:0;padding:2mm 2mm 2mm 1.5mm;display:flex;flex-direction:column;justify-content:flex-start;gap:1px;overflow:hidden;border-left:1px solid #eee}
+        .sname{font-size:10px;font-weight:900;color:#111;line-height:1.2;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+        .sspec{font-size:8px;font-weight:600;color:#444;line-height:1.2;word-break:break-all;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+        .sid{font-size:7px;font-family:monospace;color:#666;margin-top:1px}
+        .slogo{width:100%;max-width:15mm;margin-top:2px;display:block}`;
       } else {
         // 대형: 90×65mm — 좌: 장비 정보·관리책임자 / 우: 점검 페이지 QR(H, 30mm)
         // 책임자가 비어 있으면 손으로 적을 수 있게 밑줄 칸으로 둔다. 검사 주기·날짜는 넣지 않는다 — 바뀌어도 라벨을 갈지 않도록.
