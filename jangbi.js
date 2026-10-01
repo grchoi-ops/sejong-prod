@@ -64,6 +64,7 @@ function getSupaClient(){
 function resetSupaClient(){ _supaClient = null; SupaStore.enabled = false; }
 
 const BUCKET = 'equipment-photos';
+// 예전 외부 QR 이미지(복원 등급 L) — QR 라이브러리를 못 불러왔을 때만 대신 쓴다
 function qrUrl(id){ return 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&margin=4&data='+encodeURIComponent(id); }
 // 대형 라벨 QR 에 넣는 주소의 앞부분. "/e/관리번호" 는 vercel.json 에서 폰 점검 페이지로 넘겨 준다.
 // 시스템을 옮기면(회사 도메인·통합 플랫폼) 이 값과 넘겨 주는 곳만 바꾸면 되고, 붙은 라벨은 그대로 쓴다.
@@ -76,6 +77,13 @@ function qrSvg(text){
   // 관리번호처럼 대문자·숫자·-만 있으면 영숫자 모드 → 같은 크기에서 칸이 더 굵다
   qr.addData(text, /^[0-9A-Z $%*+\-./:]+$/.test(text) ? 'Alphanumeric' : 'Byte'); qr.make();
   return qr.createSvgTag({cellSize:4, margin:16, scalable:true});   // margin 은 px → 4칸(4px×4)
+}
+// 화면용 QR 상자 — 라벨과 같은 방식(H, SVG). 장비는 라벨과 같은 내용(점검 페이지 주소)을 넣는다.
+function qrBox(text, px, extraStyle=''){
+  const inner = typeof window.qrcode === 'function'
+    ? qrSvg(text).replace('<svg ', '<svg style="width:100%;height:100%;display:block" ')
+    : `<img src="${qrUrl(text)}" style="width:100%;height:100%;display:block" />`;
+  return `<div style="width:${px}px;height:${px}px;background:#fff;flex-shrink:0;${extraStyle}">${inner}</div>`;
 }
 
 /* ── SupaStore ── */
@@ -197,22 +205,6 @@ async function compressImage(file, maxW=640, quality=0.65){
 }
 
 /* ── Supabase Storage 업로드 ── */
-async function uploadQR(equipmentId){
-  const supa = getSupaClient();
-  if(!supa) return null;
-  try{
-    const apiUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=4&data='+encodeURIComponent(equipmentId);
-    const resp = await fetch(apiUrl);
-    if(!resp.ok) return null;
-    const blob = await resp.blob();
-    const path = 'qr/'+equipmentId+'.png';
-    const { error } = await supa.storage.from(BUCKET).upload(path, blob, { upsert:true, contentType:'image/png' });
-    if(error) return null;
-    const { data } = supa.storage.from(BUCKET).getPublicUrl(path);
-    return data.publicUrl;
-  }catch(e){ return null; }
-}
-
 async function uploadPhoto(file, equipmentId){
   const supa = getSupaClient();
   if(!supa) return { error: 'Supabase 미설정' };
@@ -826,7 +818,7 @@ route('#/equipment/:id', ({id})=>{
         </div>
         <div class="flex-1 min-w-[200px]" style="position:relative;">
           <div style="position:absolute;top:0;right:0;text-align:center;">
-            <img src="${(e.qrUrl||qrUrl(e.id))}" style="width:90px;height:90px;border-radius:6px;border:1px solid var(--border);display:block;" />
+            ${qrBox(labelQrText(e.id), 90, 'border-radius:6px;border:1px solid var(--border);overflow:hidden;')}
             <div style="font-size:10px;color:var(--text-muted,#aaa);margin-top:3px;">${e.id}</div>
           </div>
           <div class="flex items-center gap-2 flex-wrap" style="padding-right:100px;">
@@ -1336,11 +1328,8 @@ function equipmentEdit(eq){
           data.status = data.status || '사내';
           Store.add('equipment', data);
         } else { Store.update('equipment', eq.id, data); }
-        // QR 이미지 Supabase Storage에 업로드 후 URL 저장
-        const targetId = isNew ? data.id : eq.id;
-        const qrStorageUrl = await uploadQR(targetId);
-        if(qrStorageUrl) Store.update('equipment', targetId, {qrUrl: qrStorageUrl});
-        jbNavigate('#/equipment/'+targetId);
+        // QR 은 화면·라벨 모두 그때그때 만든다(qrBox / qrSvg) — 예전처럼 이미지를 올려 두지 않는다
+        jbNavigate('#/equipment/'+(isNew ? data.id : eq.id));
       } finally { if(btn){ btn.disabled=false; btn.textContent=isNew?'등록':'저장'; } }
     };
   });
@@ -1565,11 +1554,11 @@ route('#/inspection', ()=>{
     <details class="bg-white rounded-xl shadow-sm p-3 mb-3 text-sm">
       <summary class="cursor-pointer font-semibold">📱 현장 점검은 폰으로 — 점검 페이지 열기</summary>
       <div class="flex flex-wrap gap-4 items-center mt-3">
-        <img src="${qrUrl(location.origin+'/inspect.html')}" class="w-28 h-28 rounded border bg-white" />
+        ${qrBox(JB_LABEL_QR_BASE+'/inspect.html', 112, 'border-radius:6px;border:1px solid var(--border);overflow:hidden;')}
         <div class="text-slate-500 space-y-1">
           <div>폰 카메라로 이 QR을 찍어 점검 페이지를 열고 홈 화면에 추가해 두세요. 로그인 없이 이름만 적으면 됩니다.</div>
           <div>페이지 안의 <b>📷 QR 스캔</b>으로 장비 라벨을 찍으면 그 장비 점검표가 열립니다.</div>
-          <a href="inspect.html" target="_blank" class="text-blue-600 underline">${escH(location.origin)}/inspect.html</a>
+          <a href="inspect.html" target="_blank" class="text-blue-600 underline">${escH(JB_LABEL_QR_BASE)}/inspect.html</a>
         </div>
       </div>
     </details>
@@ -2140,7 +2129,7 @@ route('#/qr-print', ()=>{
         ${list.map(e=>`
         <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
           <input type="checkbox" class="label-chk" value="${e.id}" checked style="width:16px;height:16px;flex-shrink:0;" />
-          ${`<img src="${(e.qrUrl||qrUrl(e.id))}" style="width:44px;height:44px;flex-shrink:0;border-radius:3px;" />`}
+          ${qrBox(labelQrText(e.id), 44, 'border-radius:3px;overflow:hidden;')}
           <div style="min-width:0;">
             <div style="font-weight:600;font-size:13px;">${e.type||''}</div>
             <div style="font-size:12px;color:var(--text-muted,#999);">${e.id}</div>
