@@ -326,6 +326,7 @@ function layout(content){
     {h:'#/equipment', label:'장비목록', icon:'🔧'},
     admin && {h:'#/maintenance', label:'정비입력', icon:'🛠️'},
     admin && {h:'#/consumables', label:'소모품', icon:'📦'},
+    {h:'#/inspection', label:'월간점검', icon:'📋'},
   ].filter(Boolean);
 
   return `
@@ -753,8 +754,9 @@ route('#/equipment/:id', ({id})=>{
     events.push({
       ts: m.date||m.createdAt, kind:'maintenance',
       icon:'🔧', color:'border-blue-400 bg-blue-50',
-      title: `${m.type} — ${u?.name||m.performerId||'-'}`,
-      sub: [m.partsReplaced?'부품: '+m.partsReplaced:'', m.cost?Number(m.cost).toLocaleString()+'원':''].filter(Boolean).join(' · '),
+      title: `${m.type} — ${m.inspector||u?.name||m.performerId||'-'}`,
+      sub: m.inspection ? inspSummary(m)
+        : [m.partsReplaced?'부품: '+m.partsReplaced:'', m.cost?Number(m.cost).toLocaleString()+'원':''].filter(Boolean).join(' · '),
       extra: [m.note||'', m.nextInspectionDate?`다음점검: ${fmt(m.nextInspectionDate)}`:''].filter(Boolean).join(' | '),
     });
   });
@@ -796,6 +798,7 @@ route('#/equipment/:id', ({id})=>{
           <dl style="display:grid;grid-template-columns:7em 1fr;row-gap:3px;column-gap:12px;margin-top:10px;font-size:13px;">
             <dt style="color:var(--text-muted,#999);">장비관리번호</dt><dd>${e.id}</dd>
             <dt style="color:var(--text-muted,#999);">카테고리</dt><dd>${e.category||'-'}</dd>
+            ${e.location?`<dt style="color:var(--text-muted,#999);">위치</dt><dd>${escH(e.location)}</dd>`:''}
             <dt style="color:var(--text-muted,#999);">인증</dt><dd>${certsOf(e).length?certBadges(e).replace(/ ml-1/g,' mr-1'):'미인증'}</dd>
             <dt style="color:var(--text-muted,#999);">모델명</dt><dd>${e.serial||'-'}</dd>
             <dt style="color:var(--text-muted,#999);">구입일</dt><dd>${fmt(e.purchaseDate)||'-'}</dd>
@@ -835,6 +838,7 @@ route('#/equipment/:id', ({id})=>{
               <span style="width:1px;height:20px;background:var(--border);display:inline-block;margin:0 2px;"></span>
               <a href="#/equipment/${e.id}/edit" style="background:var(--surface3);border:1px solid var(--border);color:var(--text);padding:5px 13px;border-radius:6px;font-size:13px;text-decoration:none;display:inline-block;">✏️ 수정</a>
               <a href="#/maintenance?eq=${e.id}" style="background:var(--surface3);border:1px solid var(--border);color:var(--text);padding:5px 13px;border-radius:6px;font-size:13px;text-decoration:none;display:inline-block;">📋 정비기록</a>
+              ${inspInfo(e)?`<a href="#/inspection/${e.id}" style="background:#059669;color:#fff;padding:5px 13px;border-radius:6px;font-size:13px;text-decoration:none;display:inline-block;">✅ 월간 점검${inspOf(e.id, thisMonth())?' (이번 달 완료)':''}</a>`:''}
             `:''}
           </div>
         </div>
@@ -1314,6 +1318,7 @@ function equipmentEdit(eq){
       <label class="block">다음점검일<input type="date" name="nextInspectionDate" value="${fmt(eq?.nextInspectionDate)}" class="w-full border rounded px-3 py-2 mt-1" /></label>
       <label class="block">상태<select name="status" class="w-full border rounded px-3 py-2 mt-1">${['사내','출장중','정비중','분실','폐기'].map(s=>`<option ${eq?.status===s?'selected':''}>${s}</option>`).join('')}</select></label>
       <label class="block">유형<select name="mobility" class="w-full border rounded px-3 py-2 mt-1"><option value="portable" ${(eq?.mobility||'portable')==='portable'?'selected':''}>이동장비 (출고 가능)</option><option value="fixed" ${eq?.mobility==='fixed'?'selected':''}>📌 고정설비</option></select></label>
+      <label class="block col-span-2">위치 <span class="text-xs text-slate-400">(점검 기준표에 인쇄됨)</span><input name="location" value="${escH(eq?.location||'')}" class="w-full border rounded px-3 py-2 mt-1" placeholder="예: 3공장, 1공장(가공반)" /></label>
       <div class="block col-span-2">인증 <span class="text-xs text-slate-400">(여러 개 선택 가능, 없으면 미인증)</span>${certInputs(certsOf(eq))}</div>
       <label class="block col-span-2">비고 (NOTE)<textarea name="note" rows="3" class="w-full border rounded px-3 py-2 mt-1" placeholder="자유 기재 (특이사항, 보관위치 등)">${eq?.note||''}</textarea></label>
       <label class="block col-span-2">대표사진
@@ -1466,6 +1471,311 @@ route('#/maintenance', ()=>{
     </form>
   </div>`;
 });
+
+/* ── 월간 점검 (기계 설비 점검 기준표, 양식 14-01-07) ──
+   점검 항목은 장비 종류별 기준표에서 옮겨 왔다. 항목: [점검부위, 점검항목, 운전 중, 정지 중, 점검기준]
+   결과는 정비 이력(maintenance)에 type '월간점검' 으로 장비·월당 1건 저장한다.
+   기록은 이번 달 것만 입력·수정할 수 있다 — 지난 달 칸을 나중에 채울 수 없게. */
+const INSP_TEMPLATES = (()=>{
+  const BODY   = ['몸체 (BODY)','VISUAL',false,true,'파손,결함 및 청결 점검'];
+  const WORK   = ['작동 상태 WORKING CONDITION','FUNCTIONAL CONDITION',true,false,'작동 상태 확인 소음진동 여부'];
+  const CABLE  = ['케이블 연결상태','FUNCTIONAL CONDITION',false,true,'케이블 연결 및 절연 상태 점검'];
+  const CLEAN  = ['내부 청소 INTERNAL CLEANING','VISUAL',false,true,'내부 먼지 상태 점검'];
+  const SWITCH = ['스위치 SWITCH','FUNCTIONAL CONDITION',true,false,'스위치 기능 상태 점검'];
+  const PGAUGE = ['압력계 PRESSURE GAUGE','FUNCTIONAL CONDITION',true,false,'압력계의 정상 작동 여부'];
+  const AMMETER= ['전류계 AMMETER','FUNCTIONAL CONDITION',true,false,'전류계의 정상 작동 여부'];
+  const GEAR   = ['보호구 SAFETY GEAR','VISUAL',false,true,'보호구 상태 및 교체 시기 점검'];
+  const AIRCOOL= ['냉각 시스템 COOLING SYSTEM','FUNCTIONAL CONDITION',true,true,'공기 공급 정상 작동 점검'];
+  const GAS    = ['가스 공급 GAS SUPPLY','FUNCTIONAL CONDITION',true,true,'가스 실린더 및 누설 점검'];
+  const ACC    = ['부속품 ACCESSORY','VISUAL',false,true,'부속품 상태 확인'];
+  return {
+    machine: {label:'공작기계', items:[BODY,
+      ['주축 (PRINCIPAL AXIS)','FUNCTIONAL CONDITION',true,false,'회전 상태 및 진동&소음 점검'],
+      ['절삭공구대 (TOOL POST)','FUNCTIONAL CONDITION',true,false,'공급 및 기능 정검'],
+      ['심압대 (TAILSTOCK)','FUNCTIONAL CONDITION',true,false,'접합부 연결 상태 점검'],
+      ['베드 BED','VISUAL & FUNCTIONAL CONDITION',true,true,'흠집,청결 및 기능 상태 점검'],
+      ['이송눈금 DIAL FEEDER','Accuracy',true,false,'다이얼 공급기 및 정확도 점검'],
+      ['기어박스 GEAR BOX','FUNCTIONAL CONDITION',true,false,'진동 소음 및 오일 점검'],
+      ['척 CHUCK','JOINT CONDITION',true,true,'작동 및 연결 상태 점검'],
+      SWITCH]},
+    plasma: {label:'플라즈마 절단기', items:[BODY, PGAUGE, WORK, CABLE, AIRCOOL,
+      ['노즐 및 전극 NOZZLE & ELECTRODE','FUNCTIONAL CONDITION',false,true,'노즐과 전극 교체 시기 점검'], GEAR, CLEAN, SWITCH]},
+    gouging: {label:'가우징 머신', items:[BODY, PGAUGE, WORK, CABLE, AIRCOOL,
+      ['가우징 로드 GOUGING ROD','FUNCTIONAL CONDITION',false,true,'가우징 로드 상태 점검'], GEAR, CLEAN, SWITCH]},
+    arc: {label:'아크 용접기', items:[BODY, AMMETER, WORK, CABLE,
+      ['자동전격방지기 AVRD','FUNCTIONAL CONDITION',true,false,'자동전격방지기 작동 여부'], CLEAN, SWITCH]},
+    tig: {label:'TIG 용접기', items:[BODY, AMMETER, WORK, CABLE,
+      ['냉각 시스템 COOLING SYSTEM','FUNCTIONAL CONDITION',true,false,'냉각수 공급 정상 작동 점검'], GAS,
+      ['토치 및 전극 TORCH & ELECTRODE','FUNCTIONAL CONDITION',false,true,'토치,노즐,텅스텐 오염상태 점검'], CLEAN, SWITCH]},
+    co2: {label:'CO2 용접기', items:[BODY, AMMETER, WORK, CABLE,
+      ['와이어 피더 WIRE FEEDER','FUNCTIONAL CONDITION',true,false,'와이어 피더 정상 작동 점검'], GAS,
+      ['토치 및 전극 TORCH & ELECTRODE','FUNCTIONAL CONDITION',false,true,'토치,노즐,피더 오염상태 점검'], CLEAN, SWITCH]},
+    compressor: {label:'컴프레서', items:[BODY, PGAUGE, WORK, CABLE,
+      ['에어 필터 AIR FILTER','FUNCTIONAL CONDITION',false,true,'에어 필터 청소 및 교체 점검'],
+      ['에어 공급 AIR SUPPLY','FUNCTIONAL CONDITION',true,true,'공기 배관 및 누설 점검'],
+      ['윤활유 LUBRICANT','FUNCTIONAL CONDITION',false,true,'윤활유 상태 및 교환 주기 점검'],
+      ['흡토출 밸브 VALVE','VISUAL',false,true,'흡,토출 밸브 교환 주기 점검'], SWITCH]},
+    oven: {label:'용접봉 건조로', items:[BODY, PGAUGE, WORK, CABLE,
+      ['내부 청소 INSIDE CLEANING','VISUAL',false,true,'내부 청소 상태']]},
+    hwrench: {label:'유압 렌치', items:[BODY,
+      ['허용압력 PRESSURE','FUNCTIONAL CONDITION',true,false,'정격 토크값과 최대 허용압력'],
+      ['작동 상태 WORKING CONDITION','FUNCTIONAL CONDITION',true,false,'작동 상태 확인 회전,토크 여부'],
+      ['유압호스 및 커넥터 상태','VISUAL',false,true,'호스,커넥터 등의 마모,누유,풀림 여부 확인'], ACC]},
+    pump: {label:'수중 모터 펌프', items:[BODY,
+      ['누수 상태 WATERPROOF','FUNCTIONAL CONDITION',true,false,'모터 누수 상태 및 마감 상태'],
+      ['작동 상태 WORKING CONDITION','FUNCTIONAL CONDITION',true,false,'펌프 상태 확인 정상 운전 여부'],
+      ['전원 케이블 및 배선','VISUAL',false,true,'전원 케이블 및 연결,손상상태'],
+      ['유량 상태 FLOW STATUS','VISUAL',true,false,'펌프 유량 상태 확인']]},
+    washer: {label:'고압 세척기', items:[BODY,
+      ['작동 상태 WORKING CONDITION','FUNCTIONAL CONDITION',true,false,'작동 상태 확인 회전,토크 여부'],
+      ['펌프 및 엔진 PUMP&ENGINE','FUNCTIONAL CONDITION',true,false,'오일 상태 확인 점검 및 교환'],
+      ['노즐 NOZZLE','VISUAL',false,true,'노즐 막힘 오염 점검 청소'], ACC,
+      ['압력 및 유량 PRESSURE & FLOW','FUNCTIONAL CONDITION',true,false,'압력 설정치 및 분사압력 확인']]},
+  };
+})();
+// 관리번호 → [기준표 종류, 영문 설비명, 번호 붙임 여부]. 정확한 번호가 접두어보다 우선.
+const INSP_MAP_EXACT = {
+  'SJ-OV-01': ['oven','DRY OVEN',false],
+  'SJ-EQ-13': ['pump','SUBMERSIBLE MOTOR PUMP',false],
+  'SJ-EQ-14': ['washer','HIGH PRESSURE WASHER',false],
+};
+const INSP_MAP_PREFIX = {
+  LT:['machine','LATHE'], ML:['machine','MILLING MACHINE'], DR:['machine','DRILLING MACHINE'],
+  PL:['plasma','PLASMA CUTTER'], GA:['gouging','GOUGING MACHINE'],
+  AC:['arc','ARC WELDING MACHINE'], TI:['tig','TIG WELDING MACHINE'], FC:['co2','CO2 WELDING MACHINE'],
+  CP:['compressor','COMPRESSOR'], HW:['hwrench','HYDRAULIC WRENCH'],
+};
+const INSP_MARKS = [['○','양호'],['△','수리'],['□','주유'],['×','교환']];
+const INSP_FORM_NO = '(양식 /Form 14-01-07) REV.4';
+
+function inspInfo(e){
+  if(!e || e.status==='폐기') return null;
+  const ex = INSP_MAP_EXACT[e.id];
+  if(ex) return {tpl:ex[0], ...INSP_TEMPLATES[ex[0]], nameEn:ex[1]};
+  const m = e.id.match(/^SJ-([A-Z]+)-(\d+)$/);
+  const p = m && INSP_MAP_PREFIX[m[1]];
+  if(!p) return null;
+  return {tpl:p[0], ...INSP_TEMPLATES[p[0]], nameEn:`${p[1]} -${Number(m[2])}`};
+}
+const inspTargets = () => Store.equipment.filter(e=>inspInfo(e)).sort((a,b)=>a.id.localeCompare(b.id));
+const inspRecords = (eqId) => Store.maintenance.filter(m=>m.equipmentId===eqId && m.type==='월간점검' && m.inspection);
+// 해당 월(YYYY-MM)의 기록 — 같은 달에 여러 건이면 가장 최근 수정본
+const inspOf = (eqId, ym) => inspRecords(eqId).filter(m=>(m.date||'').startsWith(ym))
+  .sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''))[0];
+const thisMonth = () => todayISO().slice(0,7);
+const inspSummary = rec => {
+  const r = rec.inspection.results||[];
+  const bad = r.filter(x=>x && x!=='○').length;
+  return bad ? `이상 ${bad}건 (${INSP_MARKS.filter(([s])=>r.includes(s) && s!=='○').map(([s,l])=>`${s}${l} ${r.filter(x=>x===s).length}`).join(', ')})` : '전 항목 양호';
+};
+
+// 다른 기기에서 입력한 점검 결과를 보려면 maintenance 를 다시 읽어야 한다(실시간 구독 대상이 아님)
+let _inspReloadAt = 0;
+function inspRefresh(){
+  if(Date.now()-_inspReloadAt < 30000 || !SupaStore.enabled) return;
+  _inspReloadAt = Date.now();
+  const supa = getSupaClient(); if(!supa) return;
+  supa.from(SupaStore.TBL('maintenance')).select('*').order('created_at').then(({data, error})=>{
+    if(error || !data) return;
+    Store.maintenance = data.map(r=>SupaStore.fromRow(r)); Store.save('maintenance');
+    if(_jbPath.startsWith('#/inspection')) jbRender();
+  });
+}
+
+/* 점검 현황 */
+route('#/inspection', ()=>{
+  inspRefresh();
+  const params = new URLSearchParams(_jbPath.split('?')[1]||'');
+  const ym = /^\d{4}-\d{2}$/.test(params.get('m')||'') ? params.get('m') : thisMonth();
+  const isCurrent = ym===thisMonth();
+  const targets = inspTargets();
+  const done = targets.filter(e=>inspOf(e.id, ym));
+  setTimeout(()=>{
+    const mi = document.getElementById('insp-month');
+    if(mi) mi.onchange = ()=>jbNavigate('#/inspection'+(mi.value && mi.value!==thisMonth() ? '?m='+mi.value : ''));
+  });
+  const groups = {};
+  targets.forEach(e=>{ (groups[inspInfo(e).tpl] ||= []).push(e); });
+  const pct = targets.length ? Math.round(done.length/targets.length*100) : 0;
+  return `
+  <div>
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <h1 class="text-2xl font-bold">📋 월간 점검</h1>
+      <div class="flex gap-2 items-center flex-wrap">
+        <input id="insp-month" type="month" value="${ym}" max="${thisMonth()}" class="border rounded-lg px-2 py-1.5" />
+        <button onclick="printInspection(null, '${ym.slice(0,4)}')" class="bg-slate-600 text-white px-4 py-2 rounded-lg">🖨 ${ym.slice(0,4)}년 기준표 전체 인쇄</button>
+      </div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm p-4 mb-3">
+      <div class="flex justify-between text-sm mb-1"><span class="font-semibold">${ym.replace('-','년 ')}월 점검</span><span><b>${done.length}</b> / ${targets.length}대 완료 (${pct}%)</span></div>
+      <div class="h-2 rounded bg-slate-200 overflow-hidden"><div class="h-2 bg-emerald-500" style="width:${pct}%"></div></div>
+      ${isCurrent?'':'<p class="text-xs text-slate-400 mt-2">지난 달 기록은 보기만 할 수 있습니다.</p>'}
+    </div>
+    ${Object.entries(INSP_TEMPLATES).filter(([k])=>groups[k]).map(([k,t])=>`
+    <div class="bg-white rounded-xl shadow-sm overflow-hidden mb-3">
+      <div class="px-4 py-2 bg-slate-50 text-xs font-semibold text-slate-500 flex justify-between">
+        <span>${t.label} (${groups[k].length}대 · ${t.items.length}항목)</span>
+        <span>${groups[k].filter(e=>inspOf(e.id, ym)).length}/${groups[k].length}</span>
+      </div>
+      ${groups[k].map(e=>{
+        const rec = inspOf(e.id, ym);
+        const bad = rec && (rec.inspection.results||[]).some(x=>x!=='○');
+        return `<div class="flex flex-wrap items-center gap-2 px-4 py-2.5 border-t text-sm">
+          <span class="w-5">${rec?(bad?'⚠️':'✅'):'⬜'}</span>
+          <a href="#/equipment/${e.id}" class="font-semibold min-w-[150px]">${escH(e.type||'')}</a>
+          <span class="text-xs text-slate-500 w-20">${e.id}</span>
+          <span class="text-xs text-slate-500 flex-1 min-w-[160px]">${rec?`${fmt(rec.date)} · ${escH(rec.inspector||'')} · ${inspSummary(rec)}`:'미점검'}</span>
+          ${isCurrent?`<a href="#/inspection/${e.id}" class="${rec?'bg-slate-200':'bg-emerald-600 text-white'} px-3 py-1 rounded-lg text-xs">${rec?'수정':'점검하기'}</a>`
+            : rec?`<a href="#/inspection/${e.id}?m=${ym}" class="bg-slate-200 px-3 py-1 rounded-lg text-xs">보기</a>`:''}
+          <button onclick="printInspection('${e.id}', '${ym.slice(0,4)}')" class="text-xs text-slate-500 underline">인쇄</button>
+        </div>`;
+      }).join('')}
+    </div>`).join('')}
+  </div>`;
+});
+
+/* 점검 입력 / 보기 */
+route('#/inspection/:id', ({id})=>{
+  const e = Store.getById('equipment', id);
+  const info = inspInfo(e);
+  if(!info) return `<div class="p-8">월간 점검 대상이 아닌 장비입니다. <a href="#/inspection" class="text-blue-600">← 점검 현황</a></div>`;
+  const params = new URLSearchParams(_jbPath.split('?')[1]||'');
+  const ym = /^\d{4}-\d{2}$/.test(params.get('m')||'') ? params.get('m') : thisMonth();
+  const editable = ym===thisMonth();
+  const rec = inspOf(id, ym);
+  const results = rec ? [...rec.inspection.results] : info.items.map(()=> '');
+  setTimeout(()=>{
+    const f = document.getElementById('insp-form'); if(!f || !editable) return;
+    f.querySelectorAll('[data-mark]').forEach(b=>{
+      b.onclick = ()=>{
+        const i = Number(b.dataset.i);
+        results[i] = b.dataset.mark;
+        f.querySelectorAll(`[data-i="${i}"]`).forEach(x=>x.classList.toggle('insp-on', x===b));
+        document.getElementById('insp-left').textContent = results.filter(x=>!x).length;
+      };
+    });
+    f.onsubmit = ev=>{
+      ev.preventDefault();
+      const fd = Object.fromEntries(new FormData(f).entries());
+      const left = results.filter(x=>!x).length;
+      if(left){ alert(`아직 결과를 고르지 않은 항목이 ${left}개 있습니다.`); return; }
+      if(!fd.inspector.trim()){ alert('점검자를 입력하세요.'); return; }
+      if(!fd.date.startsWith(thisMonth()) || fd.date > todayISO()){ alert('점검일은 이번 달, 오늘까지만 고를 수 있습니다.'); return; }
+      if(results.some(x=>x==='△'||x==='×') && !fd.action.trim()){ alert('수리(△)·교환(×) 항목이 있으면 조치사항을 적어 주세요.'); return; }
+      const doc = {
+        equipmentId:id, type:'월간점검', date:fd.date, inspector:fd.inspector.trim(),
+        performerId: Auth.current?.employeeId || fd.inspector.trim(),
+        note: fd.action.trim(), partsReplaced:'', cost:0,
+        inspection:{tpl:info.tpl, items:info.items.map(it=>it[0]), results:[...results], action:fd.action.trim()},
+      };
+      if(rec) Store.update('maintenance', rec.id, doc); else Store.add('maintenance', doc);
+      if(fd.location.trim() !== (e.location||'')) Store.update('equipment', id, {location: fd.location.trim()});
+      jbNavigate('#/inspection');
+    };
+  });
+  const markBtn = (i, s, l) => `<button type="button" data-i="${i}" data-mark="${s}" ${editable?'':'disabled'}
+      class="insp-mark ${results[i]===s?'insp-on':''}" title="${l}">${s}<span>${l}</span></button>`;
+  return `
+  <style>
+    #jangbi-root .insp-mark{min-width:52px;padding:6px 4px;border:1px solid var(--border);border-radius:8px;background:var(--surface3);color:var(--text);font-size:18px;line-height:1;display:inline-flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer}
+    #jangbi-root .insp-mark span{font-size:10px;color:var(--text2)}
+    #jangbi-root .insp-mark.insp-on{background:var(--accent);border-color:var(--accent);color:#fff}
+    #jangbi-root .insp-mark.insp-on span{color:#fff}
+    #jangbi-root .insp-mark:disabled{cursor:default;opacity:.8}
+  </style>
+  <div class="max-w-3xl">
+    <a href="#/inspection${editable?'':'?m='+ym}" class="text-sm text-blue-600">← 점검 현황</a>
+    <h1 class="text-2xl font-bold mt-1">${escH(e.type||id)} <span class="text-base font-normal text-slate-500">${id}</span></h1>
+    <p class="text-sm text-slate-500 mb-3">${info.label} 점검 기준표 · ${ym.replace('-','년 ')}월 ${rec?`· 마지막 저장 ${escH(rec.inspector||'')} ${fmt(rec.updatedAt)}`:''}</p>
+    <form id="insp-form" class="space-y-2">
+      ${info.items.map((it,i)=>`
+      <div class="bg-white rounded-xl shadow-sm p-3 flex flex-wrap items-center gap-3">
+        <div class="flex-1 min-w-[200px]">
+          <div class="font-semibold text-sm">${i+1}. ${escH(it[0])}</div>
+          <div class="text-xs text-slate-500">${escH(it[4])} <span class="text-slate-400">· ${escH(it[1])} · ${[it[2]&&'운전 중',it[3]&&'정지 중'].filter(Boolean).join('/')}</span></div>
+        </div>
+        <div class="flex gap-1">${INSP_MARKS.map(([s,l])=>markBtn(i,s,l)).join('')}</div>
+      </div>`).join('')}
+      <div class="bg-white rounded-xl shadow-sm p-3 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+        <label class="block">점검일<input type="date" name="date" value="${rec?.date||todayISO()}" min="${thisMonth()}-01" max="${todayISO()}" ${editable?'':'disabled'} class="w-full border rounded px-3 py-2 mt-1" /></label>
+        <label class="block">점검자<input name="inspector" value="${escH(rec?.inspector||Auth.current?.name||'')}" ${editable?'':'disabled'} class="w-full border rounded px-3 py-2 mt-1" /></label>
+        <label class="block">위치<input name="location" value="${escH(e.location||'')}" ${editable?'':'disabled'} placeholder="예: 3공장" class="w-full border rounded px-3 py-2 mt-1" /></label>
+        <label class="block md:col-span-3">조치사항 <span class="text-xs text-slate-400">(수리·교환 항목이 있으면 필수)</span><textarea name="action" rows="2" ${editable?'':'disabled'} class="w-full border rounded px-3 py-2 mt-1">${escH(rec?.inspection.action||'')}</textarea></label>
+      </div>
+      ${editable?`<div class="flex justify-between items-center"><span class="text-sm text-slate-500">남은 항목 <b id="insp-left">${results.filter(x=>!x).length}</b>개</span>
+        <button class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-semibold">${rec?'수정 저장':'점검 저장'}</button></div>`
+        :'<p class="text-sm text-slate-400">지난 달 기록은 수정할 수 없습니다.</p>'}
+    </form>
+  </div>`;
+});
+
+/* 연간 기준표 인쇄 — 기존 종이 양식(14-01-07) 배치에 월별 결과·점검일·점검자를 채운다.
+   eqId 가 없으면 점검 대상 전체를 장비당 한 장씩. */
+window.printInspection = (eqId, year)=>{
+  const list = eqId ? [Store.getById('equipment', eqId)] : inspTargets();
+  const logo = window._jbLogoDataUrl ? `<img src="${window._jbLogoDataUrl}" style="height:34px" />` : '';
+  const pages = list.filter(Boolean).map(e=>{
+    const info = inspInfo(e); if(!info) return '';
+    const recs = Array.from({length:12}, (_,i)=>inspOf(e.id, `${year}-${pad2(i+1)}`));
+    const actions = recs.map((r,i)=>r?.inspection.action ? `${i+1}월: ${escH(r.inspection.action)}` : '').filter(Boolean);
+    const mon = (fn)=>recs.map(r=>`<td class="c">${r?fn(r):''}</td>`).join('');
+    return `<section class="page">
+      <table class="hd">
+        <tr><td rowspan="2" class="logo">${logo}</td><td rowspan="2" class="title">기계 설비 점검 기준표<div>CRITERION TABLE FOR INSPECTION OF MACHINE TOOL</div></td>
+            <td class="k">문서번호</td><td>SJ-CTIM-${e.id.replace(/^SJ-/,'')}</td></tr>
+        <tr><td class="k">위치</td><td>${escH(e.location||'')}</td></tr>
+      </table>
+      <table class="hd">
+        <tr><td class="k">설 비 명<div>NAME OF MACHINE TOOL</div></td><td>${escH(e.type||'')}<div>${escH(info.nameEn)}</div></td>
+            <td class="k">관리 번호<div>CONTROL NO.</div></td><td>${e.id}</td>
+            <td class="k">연도<div>YEAR</div></td><td>${year}</td></tr>
+      </table>
+      <table class="grid">
+        <thead>
+          <tr><th rowspan="2" style="width:28px">순서</th><th rowspan="2">점검부위<div>INSPECTION PART</div></th><th rowspan="2">점검항목<div>CHECK POINT</div></th>
+              <th colspan="2">시기 (WHEN)</th><th rowspan="2">점검 기준<div>CHECK CRITERION</div></th>
+              ${Array.from({length:12},(_,i)=>`<th rowspan="2" class="m">${i+1}</th>`).join('')}<th rowspan="2" style="width:60px">비고<div>REMARKS</div></th></tr>
+          <tr><th class="w">운전<div>During Operation</div></th><th class="w">정지<div>During Stand Still</div></th></tr>
+        </thead>
+        <tbody>
+          ${info.items.map((it,i)=>`<tr><td class="c">${i+1}</td><td>${escH(it[0])}</td><td>${escH(it[1])}</td>
+            <td class="c">${it[2]?'○':''}</td><td class="c">${it[3]?'○':''}</td><td>${escH(it[4])}</td>
+            ${mon(r=>r.inspection.results[i]||'')}<td></td></tr>`).join('')}
+          <tr class="sum"><td colspan="6" class="k">점검일 DATE</td>${mon(r=>fmt(r.date).slice(5).replace('-','/'))}<td></td></tr>
+          <tr class="sum"><td colspan="6" class="k">점검자 INSPECTOR</td>${mon(r=>escH(r.inspector||''))}<td></td></tr>
+        </tbody>
+      </table>
+      <table class="ft"><tr>
+        <td class="k" style="width:70px">조 치<br>사 항</td><td class="act">${actions.join('<br>')}</td>
+        <td style="width:150px"><b>범례</b><br>양호 ○ &nbsp; 수리 △<br>주유 □ &nbsp; 교환 ×</td>
+      </tr></table>
+      <div class="form">${INSP_FORM_NO}</div>
+    </section>`;
+  }).join('');
+  if(!pages){ alert('인쇄할 점검 대상 장비가 없습니다.'); return; }
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>기계 설비 점검 기준표 ${year}</title>
+  <style>
+    @page{size:A4 landscape;margin:10mm}
+    body{font-family:'Malgun Gothic',sans-serif;font-size:10px;color:#000;margin:0}
+    .page{page-break-after:always} .page:last-child{page-break-after:auto}
+    table{width:100%;border-collapse:collapse;margin-bottom:4px}
+    td,th{border:1px solid #000;padding:3px 4px;vertical-align:middle}
+    th{background:#eee;font-weight:bold;text-align:center}
+    th div,td div{font-size:8px;font-weight:normal;color:#333}
+    .hd .k{background:#eee;text-align:center;width:90px;font-weight:bold}
+    .hd .title{text-align:center;font-size:16px;font-weight:bold} .hd .title div{font-size:9px}
+    .hd .logo{width:110px;text-align:center}
+    .grid td{height:24px} .grid .m{width:30px} .grid .w{width:46px}
+    .c{text-align:center} .grid td.c{font-size:13px}
+    .grid tr.sum td{font-size:9px;height:18px} .grid tr.sum td.k{background:#eee;text-align:right;font-weight:bold}
+    .ft td{height:46px;vertical-align:top} .ft .k{background:#eee;text-align:center;vertical-align:middle;font-weight:bold}
+    .form{font-size:9px;margin-top:2px}
+  </style></head><body>${pages}</body></html>`;
+  const w = window.open('','_blank','width=1200,height=850');
+  if(!w) return;
+  w.document.write(html); w.document.close(); w.focus();
+  setTimeout(()=>{ w.print(); }, 500);
+};
 
 /* ── QR 스캔 ── */
 route('#/scan', ()=>{
