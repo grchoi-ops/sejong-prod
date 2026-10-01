@@ -72,11 +72,12 @@ const JB_LABEL_QR_BASE = 'https://sejong-prod.vercel.app';
 const labelQrText = id => `${JB_LABEL_QR_BASE}/e/${encodeURIComponent(id)}`;
 // 인쇄용 QR — 오류 복원 H(30%), 표준 여백 4칸, 벡터(SVG). index.html 에 로드된 qrcode-generator 사용.
 // (기존 api.qrserver.com 이미지는 복원 등급 기본값 L(7%)이고 120px 저해상도라 인쇄에는 쓰지 않는다)
-function qrSvg(text){
+// quiet: QR 둘레 여백 칸 수. 표준은 4칸, 주변이 흰 바탕인 소형 라벨은 2칸으로 줄여 QR 을 키운다.
+function qrSvg(text, quiet=4){
   const qr = window.qrcode(0, 'H');      // 0 = 데이터 길이에 맞춰 버전 자동
   // 관리번호처럼 대문자·숫자·-만 있으면 영숫자 모드 → 같은 크기에서 칸이 더 굵다
   qr.addData(text, /^[0-9A-Z $%*+\-./:]+$/.test(text) ? 'Alphanumeric' : 'Byte'); qr.make();
-  return qr.createSvgTag({cellSize:4, margin:16, scalable:true});   // margin 은 px → 4칸(4px×4)
+  return qr.createSvgTag({cellSize:4, margin:quiet*4, scalable:true});   // margin 은 px(칸 하나 = 4px)
 }
 // 화면용 QR 상자 — 라벨과 같은 방식(H, SVG). 장비는 라벨과 같은 내용(점검 페이지 주소)을 넣는다.
 function qrBox(text, px, extraStyle=''){
@@ -2015,31 +2016,68 @@ route('#/qr-print', ()=>{
   if(!Auth.isAdmin()) return `<div class="p-6">관리자만</div>`;
   const list = Store.equipment.filter(e=>e.status!=='폐기');
   setTimeout(async ()=>{
+    // 선택 개수를 인쇄 버튼에 보여 준다 — 무엇이 인쇄될지 분명하게
+    const chks = ()=>[...document.querySelectorAll('.label-chk')];
+    const syncCount = ()=>{
+      const n = chks().filter(c=>c.checked).length;
+      document.querySelectorAll('[data-print-count]').forEach(s=>s.textContent = n);
+      document.querySelectorAll('[data-grp-chk]').forEach(g=>{
+        const own = chks().filter(c=>c.dataset.grp===g.dataset.grpChk);
+        const k = own.filter(c=>c.checked).length;
+        g.checked = k===own.length && k>0; g.indeterminate = k>0 && k<own.length;
+      });
+    };
+    chks().forEach(c=>c.onchange = syncCount);
+    document.querySelectorAll('[data-grp-chk]').forEach(g=>g.onchange = ()=>{
+      chks().filter(c=>c.dataset.grp===g.dataset.grpChk).forEach(c=>c.checked = g.checked); syncCount();
+    });
+    // 카테고리 보기: 고른 묶음만 보이게. 선택 상태는 그대로 둔다.
+    document.querySelectorAll('[data-show]').forEach(b=>b.onclick = ()=>{
+      const k = b.dataset.show;
+      document.querySelectorAll('[data-show]').forEach(x=>x.classList.toggle('lp-on', x===b));
+      document.querySelectorAll('[data-grp-box]').forEach(box=>{
+        box.style.display = (k==='*' || box.dataset.grpBox===k) ? '' : 'none';
+      });
+      document.querySelectorAll('[data-insp]').forEach(el=>{
+        el.style.display = (k!=='insp' || el.dataset.insp==='1') ? '' : 'none';
+      });
+      if(k==='insp') document.querySelectorAll('[data-grp-box]').forEach(box=>{
+        box.style.display = box.querySelector('[data-insp="1"]') ? '' : 'none';
+      });
+    });
+    // 보이는 장비만 선택 / 전체 해제
+    window.labelSelectVisible = on => {
+      chks().forEach(c=>{ if(c.closest('[data-insp]').style.display!=='none' && c.closest('[data-grp-box]').style.display!=='none') c.checked = on; else if(!on) c.checked = false; });
+      syncCount();
+    };
+    syncCount();
+
     async function doPrint(size){
-      const sel = [...document.querySelectorAll('.label-chk:checked')].map(x=>x.value);
-      const target = sel.length ? sel : list.map(e=>e.id);
-      const labelData = target.map(id=>Store.getById('equipment',id)).filter(Boolean);
+      const sel = chks().filter(c=>c.checked).map(x=>x.value);
+      if(!sel.length){ alert('인쇄할 장비를 선택하세요.'); return; }
+      const labelData = sel.map(id=>Store.getById('equipment',id)).filter(Boolean);
       const logoHtml = window._jbLogoDataUrl ? `<img src="${window._jbLogoDataUrl}" class="logo" />` : '';
       if(typeof window.qrcode !== 'function'){ alert('QR 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.'); return; }
       // QR 을 만드는 동안(비동기) 창을 늦게 열면 팝업 차단에 걸리므로 클릭 즉시 연다
       const w = window.open('','_blank','width=860,height=1200');
       if(!w){ alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
       w.document.write('<p style="font-family:sans-serif">라벨 만드는 중...</p>');
-      // 대형은 점검 페이지 주소(폰 기본 카메라로 바로 열림), 소형은 관리번호만(작은 QR 에서도 칸이 굵게)
+      // 대형·소형 모두 장비 페이지 주소(폰 기본 카메라로 바로 열림). 소형은 흰 라벨 가장자리가 여백을
+      // 대신하므로 QR 자체 여백을 2칸으로 줄여 같은 라벨 안에서 QR 을 최대한 키운다.
       const qrs = {};
-      for(const e of labelData) qrs[e.id] = qrSvg(size==='small' ? e.id : labelQrText(e.id));
+      for(const e of labelData) qrs[e.id] = qrSvg(labelQrText(e.id), size==='small' ? 2 : 4);
 
       let labels, css;
       if(size === 'small'){
-        // 소형: 40×30mm — QR 좌측 + 장비명·스펙·관리번호·로고 우측
+        // 소형: 40×30mm(크기 유지) — QR 26mm 좌측 + 장비명·스펙·관리번호·로고 우측 좁은 칸
         labels = labelData.map(e=>{
-          const qrImg = `<div class="qr-svg" style="width:18mm;height:18mm;">${qrs[e.id]}</div>`;
-          const logoS = window._jbLogoDataUrl ? `<img src="${window._jbLogoDataUrl}" style="width:100%;max-width:15mm;margin-top:2px;display:block;" />` : '';
+          const qrImg = `<div class="qr-svg">${qrs[e.id]}</div>`;
+          const logoS = window._jbLogoDataUrl ? `<img src="${window._jbLogoDataUrl}" class="slogo" />` : '';
           return `<div class="label">
             <div class="qr-s">${qrImg}</div>
             <div class="info-s">
-              <div class="sname">${e.type||''}</div>
-              ${e.spec?`<div class="sspec">${e.spec}</div>`:''}
+              <div class="sname">${escH(e.type||'')}</div>
+              ${e.spec?`<div class="sspec">${escH(e.spec)}</div>`:''}
               <div class="sid">${e.id}</div>
               ${logoS}
             </div>
@@ -2051,12 +2089,14 @@ route('#/qr-print', ()=>{
         .wrap{display:flex;flex-wrap:wrap;gap:2mm}
         .label{width:40mm;height:30mm;border:1.5px solid #bbb;border-radius:3px;display:flex;
                align-items:center;box-sizing:border-box;overflow:hidden;break-inside:avoid;background:#fff}
-        .qr-s{padding:2mm;flex-shrink:0}
-        .info-s{flex:1;padding:2mm 2mm 2mm 0;display:flex;flex-direction:column;justify-content:flex-start;padding-top:2mm;gap:1px;overflow:hidden;border-left:1px solid #eee}
-        .sname{font-size:10px;font-weight:900;color:#111;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-        .sspec{font-size:8px;font-weight:600;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-        .sid{font-size:7px;font-family:monospace;color:#666;margin-top:1px}
-        .qr-svg svg{width:100%;height:100%;display:block}`;
+        .qr-s{padding:1.5mm 0 1.5mm 1.5mm;flex-shrink:0}
+        .qr-svg{width:26mm;height:26mm}
+        .qr-svg svg{width:100%;height:100%;display:block}
+        .info-s{flex:1;min-width:0;height:100%;box-sizing:border-box;padding:2mm 1.2mm 1.5mm 1.2mm;display:flex;flex-direction:column;gap:1px;overflow:hidden}
+        .sname{font-size:8px;font-weight:900;color:#111;line-height:1.15;overflow:hidden;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical}
+        .sspec{font-size:6.5px;font-weight:600;color:#444;line-height:1.15;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+        .sid{font-size:6px;font-family:monospace;color:#555;margin-top:1px;word-break:break-all;line-height:1.1}
+        .slogo{width:100%;max-width:10mm;margin-top:auto;display:block}`;
       } else {
         // 대형: 90×65mm — 좌: 장비 정보·관리책임자 / 우: 점검 페이지 QR(H, 30mm)
         // 책임자가 비어 있으면 손으로 적을 수 있게 밑줄 칸으로 둔다. 검사 주기·날짜는 넣지 않는다 — 바뀌어도 라벨을 갈지 않도록.
@@ -2112,32 +2152,55 @@ route('#/qr-print', ()=>{
     document.getElementById('btn-print-large').onclick = ()=> doPrint('large').catch(err=>alert('라벨을 만들지 못했습니다: '+err.message));
     document.getElementById('btn-print-small').onclick = ()=> doPrint('small').catch(err=>alert('라벨을 만들지 못했습니다: '+err.message));
   });
+  // 카테고리별 묶음 (장비 등록 화면의 카테고리 순서, 그 밖의 값·미지정은 뒤에)
+  const CAT_ORDER = ['공작','용접','운반','공구','측정','기타'];
+  const catOf = e => e.category || '미지정';
+  const cats = [...new Set(list.map(catOf))].sort((a,b)=>{
+    const ia = CAT_ORDER.indexOf(a), ib = CAT_ORDER.indexOf(b);
+    return (ia<0?99:ia)-(ib<0?99:ib) || a.localeCompare(b);
+  });
+  const byCat = Object.fromEntries(cats.map(c=>[c, list.filter(e=>catOf(e)===c).sort((a,b)=>a.id.localeCompare(b.id))]));
+  const inspN = list.filter(e=>inspInfo(e)).length;
+  const chip = (k, label, n, on) => `<button type="button" data-show="${escH(k)}" class="lp-chip ${on?'lp-on':''}">${escH(label)} <span>${n}</span></button>`;
   return `
+  <style>
+    #jangbi-root .lp-chip{padding:5px 12px;border-radius:999px;border:1px solid var(--border);background:var(--surface3);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer}
+    #jangbi-root .lp-chip span{opacity:.7;font-weight:400;margin-left:2px}
+    #jangbi-root .lp-chip.lp-on{background:var(--accent);border-color:var(--accent);color:#fff}
+  </style>
   <div>
-    <div class="flex flex-wrap justify-between mb-4 items-center gap-2">
+    <div class="flex flex-wrap justify-between mb-3 items-center gap-2">
       <h1 class="text-2xl font-bold">🏷 라벨 인쇄</h1>
-      <div class="flex gap-2">
-        <button onclick="document.querySelectorAll('.label-chk').forEach(c=>c.checked=true)" class="bg-slate-200 px-3 py-2 rounded-lg text-sm">전체 선택</button>
-        <button onclick="document.querySelectorAll('.label-chk').forEach(c=>c.checked=false)" class="bg-slate-200 px-3 py-2 rounded-lg text-sm">전체 해제</button>
-        <button id="btn-print-large" class="bg-slate-900 text-white px-4 py-2 rounded-lg">🖨 대형 (90×65mm)</button>
-        <button id="btn-print-small" class="bg-slate-600 text-white px-4 py-2 rounded-lg">🖨 소형 (40×30mm)</button>
+      <div class="flex gap-2 flex-wrap">
+        <button onclick="labelSelectVisible(true)" class="bg-slate-200 px-3 py-2 rounded-lg text-sm">보이는 장비 모두 선택</button>
+        <button onclick="labelSelectVisible(false)" class="bg-slate-200 px-3 py-2 rounded-lg text-sm">전체 해제</button>
+        <button id="btn-print-large" class="bg-slate-900 text-white px-4 py-2 rounded-lg">🖨 대형 (90×65mm) · <span data-print-count>0</span>개</button>
+        <button id="btn-print-small" class="bg-slate-600 text-white px-4 py-2 rounded-lg">🖨 소형 (40×30mm) · <span data-print-count>0</span>개</button>
       </div>
     </div>
-    <p class="text-sm text-slate-500 mb-3">인쇄할 장비를 선택하세요 (미선택 시 전체 인쇄).</p>
-    <div class="bg-white rounded-xl shadow-sm p-4">
+    <div class="flex flex-wrap gap-1.5 mb-3">
+      ${chip('*','전체', list.length, true)}
+      ${cats.map(c=>chip(c, c, byCat[c].length, false)).join('')}
+      ${chip('insp','월간점검 대상', inspN, false)}
+    </div>
+    <p class="text-sm text-slate-500 mb-3">카테고리를 눌러 보고 싶은 장비만 보이게 할 수 있습니다. 체크한 장비만 인쇄됩니다(보기를 바꿔도 체크는 유지).</p>
+    ${cats.map(c=>`
+    <div data-grp-box="${escH(c)}" class="bg-white rounded-xl shadow-sm p-4 mb-3">
+      <label class="flex items-center gap-2 mb-3 font-semibold cursor-pointer">
+        <input type="checkbox" data-grp-chk="${escH(c)}" style="width:16px;height:16px;" /> ${escH(c)} <span class="text-xs text-slate-400 font-normal">${byCat[c].length}대</span>
+      </label>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;">
-        ${list.map(e=>`
-        <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
-          <input type="checkbox" class="label-chk" value="${e.id}" checked style="width:16px;height:16px;flex-shrink:0;" />
+        ${byCat[c].map(e=>`
+        <label data-insp="${inspInfo(e)?1:0}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
+          <input type="checkbox" class="label-chk" data-grp="${escH(c)}" value="${e.id}" checked style="width:16px;height:16px;flex-shrink:0;" />
           ${qrBox(labelQrText(e.id), 44, 'border-radius:3px;overflow:hidden;')}
           <div style="min-width:0;">
-            <div style="font-weight:600;font-size:13px;">${e.type||''}</div>
+            <div style="font-weight:600;font-size:13px;">${escH(e.type||'')}</div>
             <div style="font-size:12px;color:var(--text-muted,#999);">${e.id}</div>
-            <div style="font-size:11px;color:var(--text-muted,#aaa);">${e.category||''}</div>
           </div>
         </label>`).join('')}
       </div>
-    </div>
+    </div>`).join('')}
   </div>`;
 });
 
