@@ -100,6 +100,8 @@ label{display:block;font-size:14px;color:var(--text2);margin-bottom:6px;font-wei
   <div class="card">
     <label for="f-action">조치사항 <span style="font-weight:400;color:var(--text3)">(수리·교환이 있으면 필수)</span></label>
     <textarea id="f-action" rows="2"></textarea>
+    <label for="f-inspector" style="margin-top:12px">점검자 이름 <span style="font-weight:400;color:var(--text3)">(한 번 적으면 이 폰에 기억)</span></label>
+    <input id="f-inspector" placeholder="이름을 입력하세요" autocomplete="name">
   </div>
   <div id="f-error"></div>
   <button class="btn btn-green" id="btn-save">저장</button>
@@ -213,7 +215,11 @@ async function save(){
   const name = $('name').value.trim();
   const action = $('f-action').value.trim();
   const err = inspValidate({info:cur.info, results:cur.results, action, inspector:name});
-  if(err){ $('f-error').innerHTML = `<div class="notice err">${esc(err)}${!name?' (처음 화면에서 이름을 적어 주세요)':''}</div>`; return; }
+  if(err){
+    $('f-error').innerHTML = `<div class="notice err">${esc(err)}</div>`;
+    if(!name) $('f-inspector').focus();
+    return;
+  }
   const btn = $('btn-save'); btn.disabled = true; btn.textContent = '저장 중...';
   try{
     const now = new Date().toISOString();
@@ -238,7 +244,6 @@ async function save(){
 }
 
 async function startScan(){
-  if(!$('name').value.trim()){ alert('먼저 점검자 이름을 입력하세요.'); $('name').focus(); return; }
   show('scan');
   scanner = scanner || new Html5Qrcode('reader');
   try{
@@ -253,8 +258,13 @@ async function startScan(){
 }
 async function stopScan(){ try{ if(scanner?.isScanning) await scanner.stop(); }catch{} }
 
-$('name').value = lsGet(NAME_KEY);
-$('name').addEventListener('input', ()=>lsSet(NAME_KEY, $('name').value.trim()));
+// 점검자 이름은 첫 화면과 점검표 양쪽에 있다 — 어느 쪽에 적어도 같이 바뀌고 폰에 기억된다
+$('name').value = $('f-inspector').value = lsGet(NAME_KEY);
+['name','f-inspector'].forEach(id=>$(id).addEventListener('input', ()=>{
+  const v = $(id).value;
+  $(id==='name'?'f-inspector':'name').value = v;
+  lsSet(NAME_KEY, v.trim());
+}));
 $('btn-scan').onclick = startScan;
 $('btn-next').onclick = startScan;
 $('btn-scan-cancel').onclick = async()=>{ await stopScan(); show('home'); };
@@ -270,7 +280,8 @@ $('btn-home').onclick = ()=>show('home');
     $('hdr-sub').textContent = '장비 라벨의 QR을 찍어 점검하세요';
     updateProgress();
     const qid = new URLSearchParams(location.search).get('id');
-    if(qid && $('name').value.trim()) openEquipment(qid); else show('home');
+    // 폰 기본 카메라로 QR 을 찍고 들어오면 이름이 없어도 바로 점검표를 연다(이름은 점검표에서 입력)
+    if(qid) openEquipment(qid); else show('home');
   }catch(e){
     $('hdr-sub').textContent = '';
     $('fatal-text').textContent = e.message || String(e);
