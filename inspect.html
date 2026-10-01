@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=2.0, user-scalable=yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="설비 점검">
+<meta name="theme-color" content="#f0f4f8">
+<title>세종기술 설비 월간 점검</title>
+<!--
+  inspect.html — 현장용 월간 점검 (폰). 로그인 없이 이름만 적고 쓴다.
+  장비 QR(관리번호)을 찍으면 그 장비의 기계 설비 점검 기준표가 열리고, 결과는
+  장비관리(jangbi.js)와 같은 jb_maintenance 에 type '월간점검' 으로 저장된다.
+  기준표 항목·대상 판별·기록 모양은 insp-shared.js 를 공용으로 쓴다.
+  ?id=SJ-TI-07 로 열면 바로 그 장비 점검표가 열린다.
+-->
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+:root{
+  --bg:#f0f4f8;--surface:#fff;--surface3:#e2e8f0;--border:#c8d0dc;
+  --text1:#1e293b;--text2:#475569;--text3:#64748b;
+  --accent:#2563eb;--green:#059669;--red:#dc2626;--orange:#d97706;
+  --radius:14px;--radius-sm:10px;
+}
+html,body{background:var(--bg);color:var(--text1);font-family:'맑은 고딕','Malgun Gothic','Apple SD Gothic Neo',sans-serif;}
+body{max-width:560px;margin:0 auto;padding:14px 14px 40px;}
+h1{font-size:20px;margin-bottom:2px}
+.sub{color:var(--text3);font-size:14px}
+.card{background:var(--surface);border-radius:var(--radius);padding:14px;margin-top:12px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.btn{display:block;width:100%;border:none;cursor:pointer;font-family:inherit;border-radius:var(--radius-sm);font-size:19px;font-weight:700;padding:16px;margin-top:10px}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-green{background:var(--green);color:#fff}
+.btn-ghost{background:var(--surface3);color:var(--text2)}
+.btn:disabled{opacity:.5}
+input,textarea{width:100%;font-family:inherit;font-size:18px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:#fff;color:var(--text1)}
+label{display:block;font-size:14px;color:var(--text2);margin-bottom:6px;font-weight:600}
+.row{display:flex;gap:8px;align-items:center}
+.progress{height:8px;background:var(--surface3);border-radius:4px;overflow:hidden;margin-top:8px}
+.progress>div{height:100%;background:var(--green)}
+.item{background:var(--surface);border-radius:var(--radius);padding:12px;margin-top:10px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.item .t{font-weight:700;font-size:16px}
+.item .c{font-size:13px;color:var(--text3);margin-top:2px}
+.marks{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
+.mark{border:2px solid var(--border);background:#fff;border-radius:10px;padding:8px 0;font-size:24px;line-height:1.1;font-family:inherit;color:var(--text1);cursor:pointer}
+.mark span{display:block;font-size:12px;color:var(--text3)}
+.mark.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.mark.on span{color:#fff}
+.mark.on.bad{background:var(--orange);border-color:var(--orange)}
+.notice{padding:10px 12px;border-radius:10px;font-size:14px;margin-top:10px}
+.notice.ok{background:#d1fae5;color:#065f46}
+.notice.warn{background:#fef3c7;color:#92400e}
+.notice.err{background:#fee2e2;color:#991b1b}
+#reader{width:100%;border-radius:var(--radius);overflow:hidden;background:#000;margin-top:12px}
+.hidden{display:none!important}
+.big{font-size:56px;text-align:center;margin:10px 0}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🔧 설비 월간 점검</h1>
+  <div class="sub" id="hdr-sub">불러오는 중...</div>
+</header>
+
+<!-- 시작: 이름 + 스캔 -->
+<section id="v-home" class="hidden">
+  <div class="card">
+    <label for="name">점검자 이름</label>
+    <input id="name" placeholder="이름을 입력하세요" autocomplete="name">
+    <div class="progress"><div id="prog-bar" style="width:0"></div></div>
+    <div class="sub" id="prog-text" style="margin-top:6px"></div>
+  </div>
+  <button class="btn btn-primary" id="btn-scan">📷 QR 스캔</button>
+  <div class="card">
+    <label for="manual-id">QR이 안 찍히면 관리번호 입력</label>
+    <div class="row">
+      <input id="manual-id" placeholder="예: SJ-TI-07" autocapitalize="characters">
+      <button class="btn btn-ghost" id="btn-manual" style="width:auto;margin:0;padding:12px 16px;font-size:16px;white-space:nowrap;flex-shrink:0">열기</button>
+    </div>
+  </div>
+</section>
+
+<!-- 스캐너 -->
+<section id="v-scan" class="hidden">
+  <div id="reader"></div>
+  <div class="sub" style="margin-top:8px;text-align:center">장비 라벨의 QR을 화면 가운데에 맞추세요</div>
+  <button class="btn btn-ghost" id="btn-scan-cancel">취소</button>
+</section>
+
+<!-- 점검표 -->
+<section id="v-form" class="hidden">
+  <div class="card">
+    <div style="font-size:20px;font-weight:700" id="f-name"></div>
+    <div class="sub" id="f-meta"></div>
+    <div id="f-notice"></div>
+  </div>
+  <div id="f-items"></div>
+  <div class="card">
+    <label for="f-action">조치사항 <span style="font-weight:400;color:var(--text3)">(수리·교환이 있으면 필수)</span></label>
+    <textarea id="f-action" rows="2"></textarea>
+  </div>
+  <div id="f-error"></div>
+  <button class="btn btn-green" id="btn-save">저장</button>
+  <button class="btn btn-ghost" id="btn-back">취소</button>
+</section>
+
+<!-- 저장 완료 -->
+<section id="v-done" class="hidden">
+  <div class="card" style="text-align:center">
+    <div class="big">✅</div>
+    <div style="font-size:18px;font-weight:700" id="d-text"></div>
+    <div class="sub" id="d-sub" style="margin-top:4px"></div>
+  </div>
+  <button class="btn btn-primary" id="btn-next">📷 다음 장비 스캔</button>
+  <button class="btn btn-ghost" id="btn-home">처음으로</button>
+</section>
+
+<section id="v-fatal" class="hidden"><div class="notice err" id="fatal-text"></div></section>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="insp-shared.js"></script>
+<script>
+const SUPA_URL = 'https://fjpqsoxqsxyzstjuysdx.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZqcHFzb3hxc3h5enN0anV5c2R4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NDg2NzMsImV4cCI6MjA5MTMyNDY3M30.47aiG4TEKQtS7rw3vz2h0aJUgdxGAWU3rUFcaoVpfKU';
+const NAME_KEY = 'insp_inspector_name';
+const supa = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad2 = n => String(n).padStart(2,'0');
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; };
+const ym = () => today().slice(0,7);
+const uid = () => Math.random().toString(36).slice(2,10);
+const lsGet = k => { try{ return localStorage.getItem(k)||''; }catch{ return ''; } };
+const lsSet = (k,v) => { try{ localStorage.setItem(k,v); }catch{} };
+
+let equipment = {};      // id → 장비
+let monthRecs = {};      // equipmentId → 이번 달 최신 점검 기록 {id, data}
+let cur = null;          // 지금 점검 중인 {e, info, results, rec}
+let scanner = null;
+
+function show(v){
+  ['home','scan','form','done','fatal'].forEach(x=>$('v-'+x).classList.toggle('hidden', x!==v));
+  window.scrollTo(0,0);
+}
+function targets(){ return Object.values(equipment).filter(e=>inspInfo(e)); }
+function updateProgress(){
+  const all = targets(), done = all.filter(e=>monthRecs[e.id]).length;
+  $('prog-bar').style.width = (all.length ? done/all.length*100 : 0)+'%';
+  $('prog-text').textContent = `${ym().replace('-','년 ')}월 점검 ${done} / ${all.length}대 완료`;
+}
+
+async function loadData(){
+  const [eq, mt] = await Promise.all([
+    supa.from('jb_equipment').select('id,data'),
+    supa.from('jb_maintenance').select('id,data').eq('data->>type','월간점검').gte('data->>date', ym()+'-01'),
+  ]);
+  if(eq.error) throw new Error('장비 목록을 불러오지 못했습니다: '+eq.error.message);
+  if(mt.error) throw new Error('점검 기록을 불러오지 못했습니다: '+mt.error.message);
+  equipment = {};
+  eq.data.forEach(r=>{ equipment[r.id] = {...r.data, id:r.id}; });
+  monthRecs = {};
+  mt.data.filter(r=>(r.data.date||'').startsWith(ym())).forEach(r=>{
+    const prev = monthRecs[r.data.equipmentId];
+    if(!prev || (r.data.updatedAt||'') > (prev.data.updatedAt||'')) monthRecs[r.data.equipmentId] = r;
+  });
+}
+
+// QR 내용: "SJ-TI-07" / "JB:SJ-TI-07" / ".../inspect.html?id=SJ-TI-07" 모두 받는다
+function idFromText(txt){
+  let s = String(txt||'').trim();
+  try{ const u = new URL(s); s = u.searchParams.get('id') || s; }catch{}
+  return s.replace(/^JB:/i,'').replace(/\s/g,'').toUpperCase();
+}
+
+function openEquipment(rawId){
+  const id = idFromText(rawId);
+  const e = equipment[id];
+  if(!e){ alert(`등록되지 않은 관리번호입니다: ${id}`); show('home'); return; }
+  const info = inspInfo(e);
+  if(!info){ alert(`${e.type||id} (${id})는 월간 점검 대상이 아닙니다.`); show('home'); return; }
+  const rec = monthRecs[id];
+  cur = {e, info, rec, results: rec ? [...rec.data.inspection.results] : info.items.map(()=>'')};
+  $('f-name').textContent = e.type || id;
+  $('f-meta').textContent = `${id} · ${info.label}${e.location?' · '+e.location:''} · ${today()}`;
+  $('f-notice').innerHTML = rec
+    ? `<div class="notice warn">이번 달 이미 점검했습니다 (${esc(rec.data.date)} ${esc(rec.data.inspector)}). 다시 저장하면 이 결과로 바뀝니다.</div>` : '';
+  $('f-action').value = rec?.data.inspection.action || '';
+  $('f-error').innerHTML = '';
+  $('f-items').innerHTML = info.items.map((it,i)=>`
+    <div class="item">
+      <div class="t">${i+1}. ${esc(it[0])}</div>
+      <div class="c">${esc(it[4])} · ${[it[2]&&'운전 중',it[3]&&'정지 중'].filter(Boolean).join('/')}</div>
+      <div class="marks">${INSP_MARKS.map(([s,l])=>`<button type="button" class="mark" data-i="${i}" data-m="${s}">${s}<span>${l}</span></button>`).join('')}</div>
+    </div>`).join('');
+  $('f-items').querySelectorAll('.mark').forEach(b=>b.onclick = ()=>{ cur.results[Number(b.dataset.i)] = b.dataset.m; paintMarks(); });
+  paintMarks();
+  show('form');
+  history.replaceState(null, '', '?id='+encodeURIComponent(id));
+}
+function paintMarks(){
+  $('f-items').querySelectorAll('.mark').forEach(b=>{
+    const on = cur.results[Number(b.dataset.i)]===b.dataset.m;
+    b.classList.toggle('on', on);
+    b.classList.toggle('bad', on && b.dataset.m!=='○');
+  });
+}
+
+async function save(){
+  const name = $('name').value.trim();
+  const action = $('f-action').value.trim();
+  const err = inspValidate({info:cur.info, results:cur.results, action, inspector:name});
+  if(err){ $('f-error').innerHTML = `<div class="notice err">${esc(err)}${!name?' (처음 화면에서 이름을 적어 주세요)':''}</div>`; return; }
+  const btn = $('btn-save'); btn.disabled = true; btn.textContent = '저장 중...';
+  try{
+    const now = new Date().toISOString();
+    const id = cur.rec?.id || uid();
+    const data = {
+      ...(cur.rec?.data||{}),
+      ...inspBuildDoc({equipmentId:cur.e.id, info:cur.info, results:cur.results, action, date:today(), inspector:name, via:'mobile'}),
+      id, createdAt: cur.rec?.data.createdAt || now, updatedAt: now,
+    };
+    const {error} = await supa.from('jb_maintenance').upsert({id, data, created_at:data.createdAt, updated_at:now});
+    if(error) throw error;
+    monthRecs[cur.e.id] = {id, data};
+    const bad = cur.results.filter(x=>x!=='○').length;
+    $('d-text').textContent = `${cur.e.type||cur.e.id} 점검 저장`;
+    $('d-sub').textContent = bad ? `이상 ${bad}건 · ${action}` : '전 항목 양호';
+    updateProgress();
+    history.replaceState(null, '', location.pathname);
+    show('done');
+  }catch(e){
+    $('f-error').innerHTML = `<div class="notice err">저장하지 못했습니다. 인터넷 연결을 확인하고 다시 눌러 주세요.<br><small>${esc(e.message||e)}</small></div>`;
+  }finally{ btn.disabled = false; btn.textContent = '저장'; }
+}
+
+async function startScan(){
+  if(!$('name').value.trim()){ alert('먼저 점검자 이름을 입력하세요.'); $('name').focus(); return; }
+  show('scan');
+  scanner = scanner || new Html5Qrcode('reader');
+  try{
+    await scanner.start({facingMode:'environment'}, {fps:10, qrbox:220}, async txt=>{
+      await stopScan();
+      openEquipment(txt);
+    });
+  }catch(e){
+    show('home');
+    alert('카메라를 열 수 없습니다. 브라우저의 카메라 권한을 허용해 주세요.\n'+(e.message||e));
+  }
+}
+async function stopScan(){ try{ if(scanner?.isScanning) await scanner.stop(); }catch{} }
+
+$('name').value = lsGet(NAME_KEY);
+$('name').addEventListener('input', ()=>lsSet(NAME_KEY, $('name').value.trim()));
+$('btn-scan').onclick = startScan;
+$('btn-next').onclick = startScan;
+$('btn-scan-cancel').onclick = async()=>{ await stopScan(); show('home'); };
+$('btn-manual').onclick = ()=>{ const v = $('manual-id').value.trim(); if(v){ $('manual-id').value=''; openEquipment(v); } };
+$('manual-id').addEventListener('keydown', e=>{ if(e.key==='Enter') $('btn-manual').click(); });
+$('btn-save').onclick = save;
+$('btn-back').onclick = ()=>{ history.replaceState(null, '', location.pathname); show('home'); };
+$('btn-home').onclick = ()=>show('home');
+
+(async()=>{
+  try{
+    await loadData();
+    $('hdr-sub').textContent = '장비 라벨의 QR을 찍어 점검하세요';
+    updateProgress();
+    const qid = new URLSearchParams(location.search).get('id');
+    if(qid && $('name').value.trim()) openEquipment(qid); else show('home');
+  }catch(e){
+    $('hdr-sub').textContent = '';
+    $('fatal-text').textContent = e.message || String(e);
+    show('fatal');
+  }
+})();
+</script>
+</body>
+</html>
