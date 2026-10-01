@@ -6,15 +6,16 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="설비 점검">
+<meta name="apple-mobile-web-app-title" content="설비 관리">
 <meta name="theme-color" content="#f0f4f8">
-<title>세종기술 설비 월간 점검</title>
+<title>세종기술 설비 관리</title>
 <!--
-  inspect.html — 현장용 월간 점검 (폰). 로그인 없이 이름만 적고 쓴다.
-  장비 QR(관리번호)을 찍으면 그 장비의 기계 설비 점검 기준표가 열리고, 결과는
-  장비관리(jangbi.js)와 같은 jb_maintenance 에 type '월간점검' 으로 저장된다.
-  기준표 항목·대상 판별·기록 모양은 insp-shared.js 를 공용으로 쓴다.
-  ?id=SJ-TI-07 로 열면 바로 그 장비 점검표가 열린다.
+  inspect.html — 현장용 장비 페이지 (폰). 로그인 없이 이름만 적고 쓴다.
+  장비 QR(대형 라벨: /e/관리번호 → 여기 ?id=관리번호)을 찍으면 그 장비 화면이 뜨고,
+  할 일을 고른다: 월간 점검 / 출장 / 반납 / 고장 신고 / 수리 완료.
+  - 월간 점검: jb_maintenance 에 type '월간점검' (insp-shared.js 의 기준표·기록 모양 공용)
+  - 출장·반납·고장·수리: 장비관리(jangbi.js)의 같은 버튼과 같은 데이터를 남긴다
+    (jb_equipment 상태, jb_checkouts 출고/반납, jb_sites 현장, jb_auditLogs 이력)
 -->
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
@@ -34,11 +35,28 @@ h1{font-size:20px;margin-bottom:2px}
 .btn-green{background:var(--green);color:#fff}
 .btn-ghost{background:var(--surface3);color:var(--text2)}
 .btn:disabled{opacity:.5}
-input,textarea{width:100%;font-family:inherit;font-size:18px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:#fff;color:var(--text1)}
-label{display:block;font-size:14px;color:var(--text2);margin-bottom:6px;font-weight:600}
+input,textarea,select{width:100%;font-family:inherit;font-size:18px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:#fff;color:var(--text1)}
+label{display:block;font-size:14px;color:var(--text2);margin:12px 0 6px;font-weight:600}
+label:first-child{margin-top:0}
 .row{display:flex;gap:8px;align-items:center}
 .progress{height:8px;background:var(--surface3);border-radius:4px;overflow:hidden;margin-top:8px}
 .progress>div{height:100%;background:var(--green)}
+/* 장비 화면 */
+.eq-head{display:flex;gap:12px;align-items:flex-start}
+.eq-photo{width:92px;height:92px;border-radius:10px;object-fit:cover;background:var(--surface3);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px}
+.eq-name{font-size:21px;font-weight:800;line-height:1.2}
+.badge{display:inline-block;font-size:13px;font-weight:700;padding:3px 9px;border-radius:999px;margin-top:6px}
+.b-사내{background:#d1fae5;color:#065f46}.b-출장중{background:#dbeafe;color:#1e40af}.b-정비중{background:#fef3c7;color:#92400e}
+.b-분실{background:#fee2e2;color:#991b1b}.b-폐기{background:#e5e7eb;color:#374151}
+dl.kv{display:grid;grid-template-columns:5.5em 1fr;gap:4px 10px;font-size:14px;margin-top:10px}
+dl.kv dt{color:var(--text3)}
+.act{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:14px;margin-top:10px;font-family:inherit;cursor:pointer;color:var(--text1)}
+.act .i{font-size:28px;width:36px;text-align:center}
+.act .t{font-size:18px;font-weight:800}
+.act .s{font-size:13px;color:var(--text3);margin-top:2px}
+.act .s.ok{color:var(--green);font-weight:700}
+.act .s.todo{color:var(--orange);font-weight:700}
+/* 점검표 */
 .item{background:var(--surface);border-radius:var(--radius);padding:12px;margin-top:10px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
 .item .t{font-weight:700;font-size:16px}
 .item .c{font-size:13px;color:var(--text3);margin-top:2px}
@@ -60,14 +78,14 @@ label{display:block;font-size:14px;color:var(--text2);margin-bottom:6px;font-wei
 <body>
 
 <header>
-  <h1>🔧 설비 월간 점검</h1>
+  <h1>🔧 세종기술 설비 관리</h1>
   <div class="sub" id="hdr-sub">불러오는 중...</div>
 </header>
 
 <!-- 시작: 이름 + 스캔 -->
 <section id="v-home" class="hidden">
   <div class="card">
-    <label for="name">점검자 이름</label>
+    <label for="name">내 이름</label>
     <input id="name" placeholder="이름을 입력하세요" autocomplete="name">
     <div class="progress"><div id="prog-bar" style="width:0"></div></div>
     <div class="sub" id="prog-text" style="margin-top:6px"></div>
@@ -89,7 +107,15 @@ label{display:block;font-size:14px;color:var(--text2);margin-bottom:6px;font-wei
   <button class="btn btn-ghost" id="btn-scan-cancel">취소</button>
 </section>
 
-<!-- 점검표 -->
+<!-- 장비 화면: 정보 + 할 일 고르기 -->
+<section id="v-equip" class="hidden">
+  <div class="card" id="eq-info"></div>
+  <div id="eq-notice"></div>
+  <div id="eq-actions"></div>
+  <button class="btn btn-ghost" id="btn-eq-scan">📷 다른 장비 스캔</button>
+</section>
+
+<!-- 월간 점검표 -->
 <section id="v-form" class="hidden">
   <div class="card">
     <div style="font-size:20px;font-weight:700" id="f-name"></div>
@@ -100,12 +126,51 @@ label{display:block;font-size:14px;color:var(--text2);margin-bottom:6px;font-wei
   <div class="card">
     <label for="f-action">조치사항 <span style="font-weight:400;color:var(--text3)">(수리·교환이 있으면 필수)</span></label>
     <textarea id="f-action" rows="2"></textarea>
-    <label for="f-inspector" style="margin-top:12px">점검자 이름 <span style="font-weight:400;color:var(--text3)">(한 번 적으면 이 폰에 기억)</span></label>
-    <input id="f-inspector" placeholder="이름을 입력하세요" autocomplete="name">
+    <label for="f-inspector">점검자 이름 <span style="font-weight:400;color:var(--text3)">(한 번 적으면 이 폰에 기억)</span></label>
+    <input id="f-inspector" data-name placeholder="이름을 입력하세요" autocomplete="name">
   </div>
   <div id="f-error"></div>
   <button class="btn btn-green" id="btn-save">저장</button>
-  <button class="btn btn-ghost" id="btn-back">취소</button>
+  <button class="btn btn-ghost" data-back>취소</button>
+</section>
+
+<!-- 출장 -->
+<section id="v-trip" class="hidden">
+  <div class="card">
+    <div style="font-size:20px;font-weight:700">📤 출장 처리</div>
+    <div class="sub" id="t-eq"></div>
+    <label for="t-site">현장 (프로젝트)</label>
+    <select id="t-site"></select>
+    <label for="t-custom">직접 입력 <span style="font-weight:400;color:var(--text3)">(위에서 고르면 무시)</span></label>
+    <input id="t-custom" placeholder="현장명">
+    <label for="t-holder">소지자</label>
+    <input id="t-holder" placeholder="가져가는 사람 이름">
+    <label for="t-return">예정 반납일 *</label>
+    <input id="t-return" type="date">
+    <label for="t-purpose">메모</label>
+    <input id="t-purpose" placeholder="사용 용도 등">
+    <label for="t-name">처리자 이름</label>
+    <input id="t-name" data-name placeholder="이름을 입력하세요" autocomplete="name">
+  </div>
+  <div id="t-error"></div>
+  <button class="btn btn-primary" id="btn-trip-save">출장 처리</button>
+  <button class="btn btn-ghost" data-back>취소</button>
+</section>
+
+<!-- 반납 / 고장 신고 / 수리 완료 (메모 한 칸짜리 처리) -->
+<section id="v-simple" class="hidden">
+  <div class="card">
+    <div style="font-size:20px;font-weight:700" id="s-title"></div>
+    <div class="sub" id="s-eq"></div>
+    <div id="s-desc"></div>
+    <label for="s-note" id="s-note-label"></label>
+    <textarea id="s-note" rows="3"></textarea>
+    <label for="s-name">처리자 이름</label>
+    <input id="s-name" data-name placeholder="이름을 입력하세요" autocomplete="name">
+  </div>
+  <div id="s-error"></div>
+  <button class="btn btn-primary" id="btn-simple-save"></button>
+  <button class="btn btn-ghost" data-back>취소</button>
 </section>
 
 <!-- 저장 완료 -->
@@ -116,7 +181,7 @@ label{display:block;font-size:14px;color:var(--text2);margin-bottom:6px;font-wei
     <div class="sub" id="d-sub" style="margin-top:4px"></div>
   </div>
   <button class="btn btn-primary" id="btn-next">📷 다음 장비 스캔</button>
-  <button class="btn btn-ghost" id="btn-home">처음으로</button>
+  <button class="btn btn-ghost" data-back>이 장비 화면으로</button>
 </section>
 
 <section id="v-fatal" class="hidden"><div class="notice err" id="fatal-text"></div></section>
@@ -135,17 +200,24 @@ const esc = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','
 const pad2 = n => String(n).padStart(2,'0');
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; };
 const ym = () => today().slice(0,7);
+const mmdd = s => String(s||'').slice(5,10).replace('-','/');
 const uid = () => Math.random().toString(36).slice(2,10);
 const lsGet = k => { try{ return localStorage.getItem(k)||''; }catch{ return ''; } };
 const lsSet = (k,v) => { try{ localStorage.setItem(k,v); }catch{} };
+const myName = () => lsGet(NAME_KEY).trim();
 
 let equipment = {};      // id → 장비
 let monthRecs = {};      // equipmentId → 이번 달 최신 점검 기록 {id, data}
-let cur = null;          // 지금 점검 중인 {e, info, results, rec}
+let sites = [];          // jb_sites [{id, ...data}]
+let projects = [];       // 진행 중 프로젝트 (/api/load) — 출장 현장 선택용
+let curId = null;        // 지금 보고 있는 장비
+let cur = null;          // 월간 점검 중 {e, info, results, rec}
+let simpleMode = null;   // 'return' | 'repair' | 'fixed'
 let scanner = null;
 
+const VIEWS = ['home','scan','equip','form','trip','simple','done','fatal'];
 function show(v){
-  ['home','scan','form','done','fatal'].forEach(x=>$('v-'+x).classList.toggle('hidden', x!==v));
+  VIEWS.forEach(x=>$('v-'+x).classList.toggle('hidden', x!==v));
   window.scrollTo(0,0);
 }
 function targets(){ return Object.values(equipment).filter(e=>inspInfo(e)); }
@@ -155,10 +227,12 @@ function updateProgress(){
   $('prog-text').textContent = `${ym().replace('-','년 ')}월 점검 ${done} / ${all.length}대 완료`;
 }
 
+/* ── 데이터 ── */
 async function loadData(){
-  const [eq, mt] = await Promise.all([
+  const [eq, mt, st] = await Promise.all([
     supa.from('jb_equipment').select('id,data'),
     supa.from('jb_maintenance').select('id,data').eq('data->>type','월간점검').gte('data->>date', ym()+'-01'),
+    supa.from('jb_sites').select('id,data'),
   ]);
   if(eq.error) throw new Error('장비 목록을 불러오지 못했습니다: '+eq.error.message);
   if(mt.error) throw new Error('점검 기록을 불러오지 못했습니다: '+mt.error.message);
@@ -169,25 +243,101 @@ async function loadData(){
     const prev = monthRecs[r.data.equipmentId];
     if(!prev || (r.data.updatedAt||'') > (prev.data.updatedAt||'')) monthRecs[r.data.equipmentId] = r;
   });
+  sites = st.error ? [] : st.data.map(r=>({...r.data, id:r.id}));
+  // 프로젝트는 없어도 동작한다(직접 입력)
+  fetch('/api/load').then(r=>r.json()).then(j=>{ projects = (j.data?.projects||[]).filter(p=>!p.completed); }).catch(()=>{});
 }
+// 장비 관리 앱(SupaStore.toRow)과 같은 행 모양으로 저장
+async function putDoc(table, doc){
+  const now = new Date().toISOString();
+  const data = {...doc, id: doc.id || uid(), createdAt: doc.createdAt || now, updatedAt: now};
+  const {error} = await supa.from(table).upsert({id:data.id, data, created_at:data.createdAt, updated_at:now});
+  if(error) throw error;
+  return data;
+}
+// 장비는 저장 직전에 최신 값을 다시 읽어 합친다(그 사이 PC 에서 바뀐 값을 덮지 않게)
+async function patchEquipment(id, patch){
+  const {data, error} = await supa.from('jb_equipment').select('id,data').eq('id', id).single();
+  if(error) throw error;
+  const saved = await putDoc('jb_equipment', {...data.data, ...patch, id});
+  equipment[id] = saved;
+  return saved;
+}
+const addLog = (action, equipmentId, detail, meta={}) => putDoc('jb_auditLogs', {
+  action, equipmentId, detail, actor: myName(), actorName: myName(), ts: new Date().toISOString(), via:'mobile', ...meta,
+});
 
-// QR 내용: "SJ-TI-07" / "JB:SJ-TI-07" / ".../inspect.html?id=SJ-TI-07" 모두 받는다
+/* ── 장비 화면 ── */
+// QR 내용: "SJ-TI-07" / "JB:SJ-TI-07" / ".../inspect.html?id=SJ-TI-07" / ".../e/SJ-TI-07" 모두 받는다
 function idFromText(txt){
   let s = String(txt||'').trim();
-  try{ const u = new URL(s); s = u.searchParams.get('id') || s; }catch{}
-  return s.replace(/^JB:/i,'').replace(/\s/g,'').toUpperCase();
+  try{ const u = new URL(s); s = u.searchParams.get('id') || u.pathname.split('/e/')[1] || s; }catch{}
+  return decodeURIComponent(s).replace(/^JB:/i,'').replace(/\s/g,'').toUpperCase();
 }
 
-function openEquipment(rawId){
+function openEquipment(rawId, notice){
   const id = idFromText(rawId);
   const e = equipment[id];
   if(!e){ alert(`등록되지 않은 관리번호입니다: ${id}`); show('home'); return; }
+  curId = id;
+  const status = e.status || '사내';
+  const site = sites.find(s=>s.id===e.currentSiteId);
   const info = inspInfo(e);
-  if(!info){ alert(`${e.type||id} (${id})는 월간 점검 대상이 아닙니다.`); show('home'); return; }
   const rec = monthRecs[id];
+  $('eq-info').innerHTML = `
+    <div class="eq-head">
+      ${e.photoUrl ? `<img class="eq-photo" src="${esc(e.photoUrl)}" alt="">` : '<div class="eq-photo">사진 없음</div>'}
+      <div style="min-width:0">
+        <div class="eq-name">${esc(e.type||id)}</div>
+        <div class="sub">${esc(id)}${e.spec?' · '+esc(e.spec):''}</div>
+        <span class="badge b-${esc(status)}">${esc(status)}</span>
+      </div>
+    </div>
+    <dl class="kv">
+      ${e.serial?`<dt>모델명</dt><dd>${esc(e.serial)}</dd>`:''}
+      ${e.location?`<dt>위치</dt><dd>${esc(e.location)}</dd>`:''}
+      ${(e.managerPrimary||e.managerSecondary)?`<dt>관리책임자</dt><dd>정 ${esc(e.managerPrimary||'-')} · 부 ${esc(e.managerSecondary||'-')}</dd>`:''}
+      ${status==='출장중'?`<dt>현장</dt><dd>${esc(site?.name||'-')}</dd><dt>소지자</dt><dd>${esc(e.currentHolderId||'-')}</dd><dt>반납 예정</dt><dd>${esc(e.expectedReturnDate||'-')}</dd>`:''}
+    </dl>`;
+  $('eq-notice').innerHTML = notice ? `<div class="notice ok">${esc(notice)}</div>` : '';
+
+  const acts = [];
+  if(info){
+    acts.push(rec
+      ? {k:'insp', i:'📋', t:'월간 점검', s:`이번 달 완료 — ${mmdd(rec.data.date)} ${rec.data.inspector} · ${inspSummary(rec.data)}`, cls:'ok'}
+      : {k:'insp', i:'📋', t:'월간 점검', s:`${Number(ym().slice(5))}월 미점검`, cls:'todo'});
+  }
+  if(status==='사내' && (e.mobility||'portable')!=='fixed') acts.push({k:'trip', i:'📤', t:'출장', s:'현장으로 가져갈 때'});
+  if(status==='출장중') acts.push({k:'return', i:'📥', t:'반납', s:'회사로 돌아왔을 때'});
+  if(status==='사내' || status==='출장중') acts.push({k:'repair', i:'🔧', t:'고장 신고', s:'고장·이상 발견 → 정비중으로'});
+  if(status==='정비중') acts.push({k:'fixed', i:'✅', t:'수리 완료', s:'정비중 → 사내로'});
+  $('eq-actions').innerHTML = acts.length
+    ? acts.map(a=>`<button class="act" data-act="${a.k}"><span class="i">${a.i}</span><span><div class="t">${a.t}</div><div class="s ${a.cls||''}">${esc(a.s)}</div></span></button>`).join('')
+    : `<div class="notice warn">${esc(status)} 상태의 장비는 여기서 처리할 일이 없습니다.</div>`;
+  $('eq-actions').querySelectorAll('[data-act]').forEach(b=>b.onclick = ()=>doAction(b.dataset.act));
+  show('equip');
+  history.replaceState(null, '', '?id='+encodeURIComponent(id));
+}
+
+function doAction(k){
+  const e = equipment[curId];
+  if(k==='insp'){
+    const rec = monthRecs[curId];
+    if(rec && !confirm(`이번 달 월간 점검은 이미 했습니다.\n${rec.data.date} · ${rec.data.inspector} · ${inspSummary(rec.data)}\n\n결과를 보거나 다시 점검하시겠습니까?`)) return;
+    openInspection();
+  }
+  if(k==='trip') openTrip();
+  if(k==='return') openSimple('return');
+  if(k==='repair') openSimple('repair');
+  if(k==='fixed') openSimple('fixed');
+}
+
+/* ── 월간 점검 ── */
+function openInspection(){
+  const e = equipment[curId], info = inspInfo(e), rec = monthRecs[curId];
   cur = {e, info, rec, results: rec ? [...rec.data.inspection.results] : info.items.map(()=>'')};
-  $('f-name').textContent = e.type || id;
-  $('f-meta').textContent = `${id} · ${info.label}${e.location?' · '+e.location:''} · ${today()}`;
+  $('f-name').textContent = e.type || curId;
+  $('f-meta').textContent = `${curId} · ${info.label}${e.location?' · '+e.location:''} · ${today()}`;
   $('f-notice').innerHTML = rec
     ? `<div class="notice warn">이번 달 이미 점검했습니다 (${esc(rec.data.date)} ${esc(rec.data.inspector)}). 다시 저장하면 이 결과로 바뀝니다.</div>` : '';
   $('f-action').value = rec?.data.inspection.action || '';
@@ -201,7 +351,6 @@ function openEquipment(rawId){
   $('f-items').querySelectorAll('.mark').forEach(b=>b.onclick = ()=>{ cur.results[Number(b.dataset.i)] = b.dataset.m; paintMarks(); });
   paintMarks();
   show('form');
-  history.replaceState(null, '', '?id='+encodeURIComponent(id));
 }
 function paintMarks(){
   $('f-items').querySelectorAll('.mark').forEach(b=>{
@@ -210,37 +359,122 @@ function paintMarks(){
     b.classList.toggle('bad', on && b.dataset.m!=='○');
   });
 }
-
-async function save(){
-  const name = $('name').value.trim();
+async function saveInspection(){
+  const name = myName();
   const action = $('f-action').value.trim();
   const err = inspValidate({info:cur.info, results:cur.results, action, inspector:name});
-  if(err){
-    $('f-error').innerHTML = `<div class="notice err">${esc(err)}</div>`;
-    if(!name) $('f-inspector').focus();
-    return;
-  }
-  const btn = $('btn-save'); btn.disabled = true; btn.textContent = '저장 중...';
-  try{
-    const now = new Date().toISOString();
-    const id = cur.rec?.id || uid();
-    const data = {
+  if(err){ $('f-error').innerHTML = `<div class="notice err">${esc(err)}</div>`; if(!name) $('f-inspector').focus(); return; }
+  await withBusy('btn-save', 'f-error', async()=>{
+    const data = await putDoc('jb_maintenance', {
       ...(cur.rec?.data||{}),
       ...inspBuildDoc({equipmentId:cur.e.id, info:cur.info, results:cur.results, action, date:today(), inspector:name, via:'mobile'}),
-      id, createdAt: cur.rec?.data.createdAt || now, updatedAt: now,
-    };
-    const {error} = await supa.from('jb_maintenance').upsert({id, data, created_at:data.createdAt, updated_at:now});
-    if(error) throw error;
-    monthRecs[cur.e.id] = {id, data};
+      id: cur.rec?.id, createdAt: cur.rec?.data.createdAt,
+    });
+    monthRecs[cur.e.id] = {id:data.id, data};
     const bad = cur.results.filter(x=>x!=='○').length;
-    $('d-text').textContent = `${cur.e.type||cur.e.id} 점검 저장`;
-    $('d-sub').textContent = bad ? `이상 ${bad}건 · ${action}` : '전 항목 양호';
-    updateProgress();
-    history.replaceState(null, '', location.pathname);
-    show('done');
-  }catch(e){
-    $('f-error').innerHTML = `<div class="notice err">저장하지 못했습니다. 인터넷 연결을 확인하고 다시 눌러 주세요.<br><small>${esc(e.message||e)}</small></div>`;
-  }finally{ btn.disabled = false; btn.textContent = '저장'; }
+    done(`${cur.e.type||cur.e.id} 월간 점검 저장`, bad ? `이상 ${bad}건 · ${action}` : '전 항목 양호');
+  });
+}
+
+/* ── 출장 ── */
+function openTrip(){
+  const e = equipment[curId];
+  $('t-eq').textContent = `${e.type||curId} · ${curId}`;
+  $('t-site').innerHTML = `<option value="">— 직접 입력 —</option>` +
+    projects.map(p=>`<option value="${esc(p.client||'')}">${esc(p.code||'')}${p.client?' — '+esc(p.client):''}</option>`).join('');
+  $('t-custom').value = ''; $('t-custom').disabled = false;
+  $('t-holder').value = myName();
+  $('t-return').value = ''; $('t-return').min = today();
+  $('t-purpose').value = '';
+  $('t-error').innerHTML = '';
+  show('trip');
+}
+async function saveTrip(){
+  const name = myName();
+  const siteName = $('t-site').value.trim() || $('t-custom').value.trim();
+  const holder = $('t-holder').value.trim();
+  const ret = $('t-return').value;
+  const purpose = $('t-purpose').value.trim();
+  const err = !name ? '처리자 이름을 입력하세요.' : !ret ? '예정 반납일을 고르세요.' : ret < today() ? '예정 반납일은 오늘 이후여야 합니다.' : null;
+  if(err){ $('t-error').innerHTML = `<div class="notice err">${esc(err)}</div>`; return; }
+  await withBusy('btn-trip-save', 't-error', async()=>{
+    const e = equipment[curId];
+    let siteId = null;
+    if(siteName){
+      let s = sites.find(x=>x.name===siteName);
+      if(!s){ s = await putDoc('jb_sites', {name:siteName, active:true}); sites.push(s); }
+      siteId = s.id;
+    }
+    await patchEquipment(curId, {status:'출장중', currentSiteId:siteId, currentHolderId:holder||null, expectedReturnDate:ret});
+    await putDoc('jb_checkouts', {equipmentId:curId, requesterId:holder||name, siteId, purpose, expectedReturnDate:ret,
+      status:'출고완료', approverId:name, checkoutDate:new Date().toISOString(), via:'mobile'});
+    await addLog('checkout', curId, `출장 처리 — ${holder||'-'} → ${siteName||'-'} (예정반납 ${ret})`, {siteId, holderName:holder});
+    done(`${e.type||curId} 출장 처리`, `${siteName||'현장 미지정'} · ${holder||'-'} · ${mmdd(ret)} 반납 예정`);
+  });
+}
+
+/* ── 반납 / 고장 신고 / 수리 완료 ── */
+const SIMPLE = {
+  return: {title:'📥 반납', btn:'반납 처리', note:'반납 메모 (선택)', required:false,
+           desc:e=>`현장: ${sites.find(s=>s.id===e.currentSiteId)?.name||'-'} · 소지자: ${e.currentHolderId||'-'}`},
+  repair: {title:'🔧 고장 신고', btn:'고장 신고 → 정비중', note:'고장 증상 *', required:true,
+           desc:e=>`신고하면 장비가 "정비중"으로 바뀝니다.${e.status==='출장중'?' (출장 정보는 지워집니다)':''}`},
+  fixed:  {title:'✅ 수리 완료', btn:'수리 완료 → 사내', note:'수리 내용 (선택)', required:false,
+           desc:()=>'장비가 다시 "사내" 상태로 바뀝니다.'},
+};
+function openSimple(mode){
+  simpleMode = mode;
+  const e = equipment[curId], m = SIMPLE[mode];
+  $('s-title').textContent = m.title;
+  $('s-eq').textContent = `${e.type||curId} · ${curId}`;
+  $('s-desc').innerHTML = `<div class="notice warn">${esc(m.desc(e))}</div>`;
+  $('s-note-label').textContent = m.note;
+  $('s-note').value = '';
+  $('btn-simple-save').textContent = m.btn;
+  $('s-error').innerHTML = '';
+  show('simple');
+}
+async function saveSimple(){
+  const name = myName(), note = $('s-note').value.trim(), m = SIMPLE[simpleMode];
+  const err = !name ? '처리자 이름을 입력하세요.' : (m.required && !note) ? '고장 증상을 적어 주세요.' : null;
+  if(err){ $('s-error').innerHTML = `<div class="notice err">${esc(err)}</div>`; return; }
+  await withBusy('btn-simple-save', 's-error', async()=>{
+    const e = equipment[curId], prev = e.status || '사내';
+    if(simpleMode==='return'){
+      const site = sites.find(s=>s.id===e.currentSiteId);
+      const {data:cos} = await supa.from('jb_checkouts').select('id,data').eq('data->>equipmentId', curId).eq('data->>status','출고완료');
+      const active = (cos||[]).sort((a,b)=>(b.data.checkoutDate||'').localeCompare(a.data.checkoutDate||''))[0];
+      if(active) await putDoc('jb_checkouts', {...active.data, id:active.id, status:'반납완료', actualReturnDate:new Date().toISOString(), returnNote:note, returnPhotoUrl:''});
+      await patchEquipment(curId, {status:'사내', currentSiteId:null, currentHolderId:null, expectedReturnDate:null});
+      await addLog('return', curId, `반납 처리 — ${site?.name||'-'}에서 복귀${note?' / '+note:''}`, {checkoutId:active?.id||null, note});
+      done(`${e.type||curId} 반납 처리`, note || '사내로 복귀');
+    }
+    if(simpleMode==='repair'){
+      await patchEquipment(curId, {status:'정비중', currentSiteId:null, currentHolderId:null, expectedReturnDate:null});
+      await addLog('status_change', curId, `상태 변경: ${prev} → 정비중 (고장 신고: ${note})`, {prevStatus:prev, newStatus:'정비중', symptom:note});
+      done(`${e.type||curId} 고장 신고`, `정비중 · ${note}`);
+    }
+    if(simpleMode==='fixed'){
+      await patchEquipment(curId, {status:'사내'});
+      await addLog('status_change', curId, `상태 변경: ${prev} → 사내 (수리 완료${note?': '+note:''})`, {prevStatus:prev, newStatus:'사내', note});
+      done(`${e.type||curId} 수리 완료`, note || '사내로 복귀');
+    }
+  });
+}
+
+/* ── 공통 ── */
+async function withBusy(btnId, errId, fn){
+  const btn = $(btnId), label = btn.textContent;
+  btn.disabled = true; btn.textContent = '저장 중...';
+  try{ await fn(); }
+  catch(e){ $(errId).innerHTML = `<div class="notice err">저장하지 못했습니다. 인터넷 연결을 확인하고 다시 눌러 주세요.<br><small>${esc(e.message||e)}</small></div>`; }
+  finally{ btn.disabled = false; btn.textContent = label; }
+}
+function done(text, sub){
+  $('d-text').textContent = text;
+  $('d-sub').textContent = sub;
+  updateProgress();
+  show('done');
 }
 
 async function startScan(){
@@ -258,29 +492,35 @@ async function startScan(){
 }
 async function stopScan(){ try{ if(scanner?.isScanning) await scanner.stop(); }catch{} }
 
-// 점검자 이름은 첫 화면과 점검표 양쪽에 있다 — 어느 쪽에 적어도 같이 바뀌고 폰에 기억된다
-$('name').value = $('f-inspector').value = lsGet(NAME_KEY);
-['name','f-inspector'].forEach(id=>$(id).addEventListener('input', ()=>{
-  const v = $(id).value;
-  $(id==='name'?'f-inspector':'name').value = v;
-  lsSet(NAME_KEY, v.trim());
-}));
+// 이름 칸은 여러 화면에 있다(첫 화면·점검표·출장·처리) — 어디에 적어도 모두 맞춰지고 폰에 기억된다
+const nameInputs = ['name', ...[...document.querySelectorAll('[data-name]')].map(x=>x.id)];
+nameInputs.forEach(id=>{
+  $(id).value = lsGet(NAME_KEY);
+  $(id).addEventListener('input', ()=>{
+    const v = $(id).value;
+    nameInputs.forEach(o=>{ if(o!==id) $(o).value = v; });
+    lsSet(NAME_KEY, v.trim());
+  });
+});
 $('btn-scan').onclick = startScan;
 $('btn-next').onclick = startScan;
-$('btn-scan-cancel').onclick = async()=>{ await stopScan(); show('home'); };
+$('btn-eq-scan').onclick = startScan;
+$('btn-scan-cancel').onclick = async()=>{ await stopScan(); curId ? openEquipment(curId) : show('home'); };
 $('btn-manual').onclick = ()=>{ const v = $('manual-id').value.trim(); if(v){ $('manual-id').value=''; openEquipment(v); } };
 $('manual-id').addEventListener('keydown', e=>{ if(e.key==='Enter') $('btn-manual').click(); });
-$('btn-save').onclick = save;
-$('btn-back').onclick = ()=>{ history.replaceState(null, '', location.pathname); show('home'); };
-$('btn-home').onclick = ()=>show('home');
+$('btn-save').onclick = saveInspection;
+$('btn-trip-save').onclick = saveTrip;
+$('btn-simple-save').onclick = saveSimple;
+$('t-site').onchange = ()=>{ $('t-custom').disabled = !!$('t-site').value; };
+document.querySelectorAll('[data-back]').forEach(b=>b.onclick = ()=>curId ? openEquipment(curId) : show('home'));
 
 (async()=>{
   try{
     await loadData();
-    $('hdr-sub').textContent = '장비 라벨의 QR을 찍어 점검하세요';
+    $('hdr-sub').textContent = '장비 라벨의 QR을 찍으세요';
     updateProgress();
+    // 폰 기본 카메라로 QR 을 찍고 들어오면 바로 그 장비 화면(이름은 저장할 때 입력)
     const qid = new URLSearchParams(location.search).get('id');
-    // 폰 기본 카메라로 QR 을 찍고 들어오면 이름이 없어도 바로 점검표를 연다(이름은 점검표에서 입력)
     if(qid) openEquipment(qid); else show('home');
   }catch(e){
     $('hdr-sub').textContent = '';
