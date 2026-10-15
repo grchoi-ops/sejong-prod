@@ -496,6 +496,14 @@ const managerSelect = (name, cur, cls) => {
 // 목록 화면의 체크 선택 — 다시 그려도(실시간 동기화 포함) 유지되도록 모듈 변수에 둔다.
 const _eqSel = new Set();
 
+// 정기점검 주기(개월) — 크레인 2년, 인양 기구(체인블록·레버블록·오일 잭) 1년, 그 밖의 장비 6개월
+function periodicCycleMonths(e){
+  const id = e?.id || '';
+  if(/^SJ-HC-/.test(id) || /크레인/.test(e?.type||'')) return 24;
+  if(/^SJ-(CB|LB|OJ)-/.test(id) || /체인블록|레버블록|오일 ?잭/.test(e?.type||'')) return 12;
+  return 6;
+}
+
 /* ── 장비 목록 ── */
 route('#/equipment', ()=>{
   const params = new URLSearchParams(_jbPath.split('?')[1]||'');
@@ -608,19 +616,24 @@ route('#/equipment', ()=>{
         : Store.equipment.filter(e=>certsOf(e).includes(opt.cert)).sort(byId);
       // 인증은 내부 관리용 — 인쇄물에는 제목·열 어디에도 인증 상태를 드러내지 않는다.
       const title = '장비 목록';
+      const shortD = d => fmt(d) ? fmt(d).slice(2).replace(/-/g,'.') : '';
       const rows = printList.map(e=>{
-        const site = Store.getById('sites', e.currentSiteId);
-        const holder = e.currentHolderId||'';
-        const loc = e.status==='출장중'?[site?.name,holder].filter(Boolean).join(' / ')||'-':'-';
-        const lastMaint = Store.byEqId('maintenance', e.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
+        // 월간점검은 매달 쌓이므로 빼고, 정기점검·수리·교정 등만 본다
+        const recs = Store.byEqId('maintenance', e.id).filter(m=>m.type!=='월간점검' && m.date)
+          .sort((a,b)=>b.date.localeCompare(a.date));
+        const last = recs[0];
+        const lastPeriodic = recs.find(m=>m.type==='정기점검');
+        const cycle = periodicCycleMonths(e);
+        const due = lastPeriodic ? addMonthsISO(lastPeriodic.date, cycle) : '';
+        const overdue = due && due < todayISO();
         return `<tr>
-          <td>${e.type||''}${e.spec?' · '+e.spec:''}</td>
           <td>${e.id}</td>
-          <td>${e.category||''}</td>
-          <td>${e.status||'사내'}</td>
-          <td>${loc}</td>
-          <td>${fmt(lastMaint?.date)||'-'}</td>
-          <td>${fmt(e.nextInspectionDate)||'-'}</td>
+          <td>${escH(e.type||'')}${e.spec?' · '+escH(e.spec):''}</td>
+          <td>${escH(e.category||'')}</td>
+          <td>${escH(e.status||'사내')}</td>
+          <td class="wrap">${last?`${shortD(last.date)} ${escH(last.type)}${last.note?' — '+escH(last.note):''}`:'-'}</td>
+          <td>${lastPeriodic?fmt(lastPeriodic.date):'-'}</td>
+          <td>${due?`${due}${overdue?' ⚠':''}`:'-'} <span class="cyc">(${cycle>=12?cycle/12+'년':cycle+'개월'})</span></td>
         </tr>`;
       }).join('');
       const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
@@ -633,10 +646,12 @@ route('#/equipment', ()=>{
         th,td{border:1px solid #bbb;padding:4px 6px;text-align:left;white-space:nowrap}
         th{background:#e8e8e8;font-weight:bold}
         tr:nth-child(even) td{background:#f8f8f8}
+        td.wrap{white-space:normal;max-width:90mm}
+        .cyc{color:#777;font-size:9.5px}
       </style></head><body>
         <h2>${title} (${printList.length}건)</h2>
-        <p>출력일: ${todayISO()}</p>
-        <table><thead><tr><th>장비명</th><th>장비관리번호</th><th>카테고리</th><th>상태</th><th>현재위치/소지자</th><th>최근점검</th><th>점검예정일</th></tr></thead>
+        <p>출력일: ${todayISO()} · 점검예정일 = 최근 정기점검 + 주기 (크레인 2년, 체인·레버블록·오일 잭 1년, 그 밖의 장비 6개월) · ⚠ 지남</p>
+        <table><thead><tr><th>장비관리번호</th><th>장비명</th><th>카테고리</th><th>상태</th><th>정비 내역 (최근)</th><th>최근 정기점검</th><th>점검예정일</th></tr></thead>
         <tbody>${rows}</tbody></table>
       </body></html>`;
       const w = window.open('','_blank','width=860,height=1200');
