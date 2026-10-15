@@ -552,6 +552,7 @@ route('#/equipment', ()=>{
       const all = document.getElementById('sel-all');
       if(bar) bar.style.display = _eqSel.size ? '' : 'none';
       if(cnt) cnt.textContent = _eqSel.size;
+      document.querySelectorAll('[data-sel-count]').forEach(s=>s.textContent = _eqSel.size);
       if(all){
         const vis = visibleBoxes();
         const n = vis.filter(b=>b.checked).length;
@@ -606,12 +607,14 @@ route('#/equipment', ()=>{
       jbRender();
     };
 
-    // opt 없음: 현재 화면 목록 / {all:true}: 전체 / {cert:이름}: 해당 인증 / {none:true}: 미인증
+    // opt 없음: 현재 화면 목록 / {all:true}: 전체 / {sel:true}: 체크한 장비 / {cert:이름}: 해당 인증 / {none:true}: 미인증
     window.printEquipmentList = (opt)=>{
       const menu = document.getElementById('print-menu'); if(menu) menu.open = false;
       const byId = (a,b)=>a.id.localeCompare(b.id);
+      if(opt?.sel && !_eqSel.size){ alert('먼저 인쇄할 장비를 체크하세요.'); return; }
       const printList = !opt ? list
         : opt.all ? Store.equipment.slice().sort(byId)
+        : opt.sel ? Store.equipment.filter(e=>_eqSel.has(e.id)).sort(byId)
         : opt.none ? Store.equipment.filter(e=>certsOf(e).length===0).sort(byId)
         : Store.equipment.filter(e=>certsOf(e).includes(opt.cert)).sort(byId);
       // 인증은 내부 관리용 — 인쇄물에는 제목·열 어디에도 인증 상태를 드러내지 않는다.
@@ -684,6 +687,7 @@ route('#/equipment', ()=>{
             ${certTypes.map(c=>`<button data-cert="${escH(c)}" onclick="printEquipmentList({cert:this.dataset.cert})" class="${menuBtn}">${escH(c)} 장비목록</button>`).join('')}
             <button onclick="printEquipmentList({none:true})" class="${menuBtn}">미인증 장비목록</button>
             <button onclick="printEquipmentList()" class="${menuBtn} border-t">현재 화면 목록</button>
+            <button onclick="printEquipmentList({sel:true})" class="${menuBtn}">체크한 장비만 (<span data-sel-count>${_eqSel.size}</span>대)</button>
           </div>
         </details>
       </div>`:''}
@@ -719,6 +723,7 @@ route('#/equipment', ()=>{
       <button onclick="bulkCert('remove')" class="bg-white border border-indigo-300 text-indigo-700 px-3 py-1.5 rounded-lg">− 인증 제거</button>
       <button onclick="bulkCert('clear')" class="bg-white border px-3 py-1.5 rounded-lg">미인증으로</button>
       <a href="#/maintenance/bulk" class="bg-emerald-600 text-white px-3 py-1.5 rounded-lg">🛠 정비 기록 일괄 추가</a>
+      <button onclick="printEquipmentList({sel:true})" class="bg-slate-600 text-white px-3 py-1.5 rounded-lg">🖨 선택 장비 목록 인쇄</button>
       <button onclick="clearEqSel()" class="text-xs text-slate-500 underline ml-auto">선택 해제</button>
       <div class="basis-full flex flex-wrap gap-2 items-center pt-2 border-t border-indigo-200">
         <span class="font-semibold">관리책임자</span>
