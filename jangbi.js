@@ -2011,6 +2011,94 @@ route('#/import', ()=>{
   </div>`;
 });
 
+/* ── 장비 이력카드 인쇄 (양식 10-03-01) ──
+   구매 정보는 따로 저장된 칸이 없고, 이력카드 가져오기 때 비고에 "구입처: …" 같은 줄로 들어가 있다.
+   인쇄할 때 그 줄들을 읽어 카드 칸에 나눠 넣고, 나머지 비고는 "기타 주요 이력"으로 보낸다. 없으면 빈칸. */
+const CARD_NOTE_KEYS = {'구입처':'vendor','구매처 주소':'addr','구매처 TEL':'tel','구매처 FAX':'fax','구입 일시':'date','구매 가액':'price','구매 구분':'kind'};
+function parseCardNote(note){
+  const out = {etc:[]};
+  let inHistory = false;
+  for(const raw of String(note||'').split('\n')){
+    const line = raw.trim(); if(!line) continue;
+    const m = line.match(/^([^:]+):\s*(.*)$/);
+    if(m && CARD_NOTE_KEYS[m[1].trim()]){ out[CARD_NOTE_KEYS[m[1].trim()]] = m[2].trim(); inHistory = false; continue; }
+    if(m && m[1].trim()==='기타 주요 이력'){ inHistory = true; if(m[2].trim()) out.etc.push(m[2].trim()); continue; }
+    out.etc.push(line);   // 기타 주요 이력 아래 줄 + 그 밖의 자유 메모
+  }
+  if(out.price) out.price = out.price.replace(/원$/,'');
+  return out;
+}
+// 정비 이력: 월간점검을 뺀 정비 기록(정기점검·수리·교정 등) + 수리 완료 처리(정비중 → 사내). 최근 5건을 오래된 순으로.
+function cardHistory(eqId){
+  const rows = Store.byEqId('maintenance', eqId).filter(m=>m.type!=='월간점검').map(m=>({
+    date: m.date || m.createdAt,
+    text: [m.type, m.partsReplaced && `부품: ${m.partsReplaced}`, m.note].filter(Boolean).join(' — '),
+  }));
+  (Store.auditLogs||[]).filter(a=>a.equipmentId===eqId && a.action==='status_change'
+      && (a.prevStatus==='정비중' && a.newStatus==='사내')).forEach(a=>rows.push({
+    date: a.ts, text: '수리 완료' + (a.note ? ` — ${a.note}` : ''),
+  }));
+  return rows.filter(r=>r.date).sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,5).reverse();
+}
+window.printHistoryCards = (ids)=>{
+  const list = ids.map(id=>Store.getById('equipment', id)).filter(Boolean);
+  if(!list.length){ alert('인쇄할 장비를 선택하세요.'); return; }
+  const w = window.open('','_blank','width=900,height=1200');
+  if(!w){ alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
+  const logo = window._jbLogoDataUrl ? `<img src="${window._jbLogoDataUrl}" style="max-height:15mm;max-width:40mm" />` : '';
+  const shortDate = d => { const s = fmt(d); return s ? s.slice(2).replace(/-/g,'.') : ''; };
+  const pages = list.map(e=>{
+    const n = parseCardNote(e.note);
+    const hist = cardHistory(e.id);
+    const etcLines = [...n.etc, ...Array(9).fill('')].slice(0, 9);   // 사진 칸 높이에 맞춰 9줄
+    return `<section class="card">
+      <table class="t">
+        <colgroup><col style="width:17%"><col style="width:30%"><col style="width:17%"><col style="width:36%"></colgroup>
+        <tr><td class="logo" rowspan="2">${logo}</td><td class="title" colspan="2" rowspan="2">장 비 이 력 카 드</td><td class="k">장비관리번호</td></tr>
+        <tr><td class="c b">${escH(e.id)}</td></tr>
+        <tr><td class="k">장 비 명</td><td class="c">${escH(e.type||'')}</td><td class="k">수 량</td><td class="c">1</td></tr>
+        <tr><td class="k">MODEL명</td><td class="c">${escH(e.serial||'')}</td><td class="k">규 격</td><td class="c">${escH(e.spec||'')}</td></tr>
+        <tr><td class="k">구 입 처</td><td class="c">${escH(n.vendor||'')}</td><td class="k">구입 일시</td><td class="c">${escH(fmt(e.purchaseDate) ? fmt(e.purchaseDate).replace(/-/g,'.') : (n.date||''))}</td></tr>
+        <tr><td class="k">구매처 주소</td><td class="c" colspan="3">${escH(n.addr||'')}</td></tr>
+        <tr><td class="k">구매처 TEL</td><td class="c">${escH(n.tel||'')}</td><td class="k">구매처 FAX</td><td class="c">${escH(n.fax||'')}</td></tr>
+        <tr><td class="k">구매 가액</td><td class="c">${escH(n.price||'')}</td><td class="k">구매 구분</td><td class="c">${escH(n.kind||'')}</td></tr>
+        <tr><td class="h" colspan="2">장 비 사 진</td><td class="h" colspan="2">기타 주요 이력</td></tr>
+        <tr><td class="photo" colspan="2">${e.photoUrl?`<img src="${escH(e.photoUrl)}" />`:''}</td>
+            <td class="etc" colspan="2">${etcLines.map(l=>`<div class="ln">${escH(l)}</div>`).join('')}</td></tr>
+      </table>
+      <table class="t hist">
+        <colgroup><col style="width:9%"><col style="width:17%"><col></colgroup>
+        <tr><td class="h" colspan="3">정 비 이 력</td></tr>
+        <tr><td class="k">구분</td><td class="k">일시</td><td class="k">정비 내역</td></tr>
+        ${[0,1,2,3,4].map(i=>`<tr class="hr"><td class="c">${i+1}</td><td class="c">${hist[i]?shortDate(hist[i].date):''}</td><td class="tx">${hist[i]?escH(hist[i].text):''}<div class="dash"></div></td></tr>`).join('')}
+      </table>
+      <div class="form">( 양식/Form 10-03-01) REV.0</div>
+    </section>`;
+  }).join('');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>장비 이력카드</title><style>
+    @page{size:A4 portrait;margin:12mm 12mm 10mm}
+    body{font-family:'Malgun Gothic',sans-serif;color:#000;margin:0}
+    .card{page-break-after:always} .card:last-child{page-break-after:auto}
+    table.t{width:100%;border-collapse:collapse;table-layout:fixed}
+    /* A4 한 장(인쇄 영역 약 275mm)에 들어가게 — 종이 카드 비율: 위 정보 ≈ 27%, 사진·기타 ≈ 37%, 정비 이력 ≈ 33% */
+    .t td{border:1px solid #000;padding:0 2mm;font-size:12.5px;height:8.6mm;vertical-align:middle;word-break:keep-all}
+    .t .k{text-align:center;font-weight:bold;font-size:13px;letter-spacing:1px}
+    .t .c{text-align:center} .t .b{font-weight:bold}
+    .t .logo{text-align:center} .t .title{text-align:center;font-size:24px;font-weight:bold;letter-spacing:6px}
+    .t .h{text-align:center;font-size:16px;font-weight:bold;letter-spacing:4px;height:9mm}
+    .t .photo{height:88mm;text-align:center;padding:2mm}
+    .t .photo img{max-width:100%;max-height:84mm;object-fit:contain}
+    .t .etc{vertical-align:top;padding:1mm 4mm}
+    .ln{border-bottom:1px dashed #555;height:8.6mm;line-height:8.6mm;font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    .hist{margin-top:-1px}
+    .hist tr.hr td{height:13mm}
+    .hist .tx{font-size:12.5px;vertical-align:top;padding-top:1.5mm;position:relative}
+    .hist .dash{position:absolute;left:2mm;right:2mm;top:6.5mm;border-bottom:1px dashed #555}
+    .form{font-size:11px;margin-top:1.5mm}
+  </style></head><body>${pages}</body></html>`);
+  w.document.close();
+};
+
 /* ── 라벨 인쇄 ── */
 route('#/qr-print', ()=>{
   if(!Auth.isAdmin()) return `<div class="p-6">관리자만</div>`;
@@ -2170,12 +2258,13 @@ route('#/qr-print', ()=>{
   </style>
   <div>
     <div class="flex flex-wrap justify-between mb-3 items-center gap-2">
-      <h1 class="text-2xl font-bold">🏷 라벨 인쇄</h1>
+      <h1 class="text-2xl font-bold">🏷 라벨 · 이력카드 인쇄</h1>
       <div class="flex gap-2 flex-wrap">
         <button onclick="labelSelectVisible(true)" class="bg-slate-200 px-3 py-2 rounded-lg text-sm">보이는 장비 모두 선택</button>
         <button onclick="labelSelectVisible(false)" class="bg-slate-200 px-3 py-2 rounded-lg text-sm">전체 해제</button>
         <button id="btn-print-large" class="bg-slate-900 text-white px-4 py-2 rounded-lg">🖨 대형 (90×65mm) · <span data-print-count>0</span>개</button>
         <button id="btn-print-small" class="bg-slate-600 text-white px-4 py-2 rounded-lg">🖨 소형 (40×30mm) · <span data-print-count>0</span>개</button>
+        <button onclick="printHistoryCards([...document.querySelectorAll('.label-chk:checked')].map(c=>c.value))" class="bg-teal-600 text-white px-4 py-2 rounded-lg">📇 이력카드 (A4) · <span data-print-count>0</span>장</button>
       </div>
     </div>
     <div class="flex flex-wrap gap-1.5 mb-3">
