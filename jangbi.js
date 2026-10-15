@@ -2012,8 +2012,8 @@ route('#/import', ()=>{
 });
 
 /* ── 장비 이력카드 인쇄 (양식 10-03-01) ──
-   구매 정보는 따로 저장된 칸이 없고, 이력카드 가져오기 때 비고에 "구입처: …" 같은 줄로 들어가 있다.
-   인쇄할 때 그 줄들을 읽어 카드 칸에 나눠 넣고, 나머지 비고는 "기타 주요 이력"으로 보낸다. 없으면 빈칸. */
+   구매처 정보(구입처·주소·TEL·FAX·가액·구매 구분) 칸은 카드에서 뺐다. 이력카드 가져오기 때 비고에
+   "구입처: …" 같은 줄로 들어가 있어서, 그 줄들은 걸러 내고(구입 일시만 씀) 나머지 비고를 "기타 주요 이력"으로 보낸다. */
 const CARD_NOTE_KEYS = {'구입처':'vendor','구매처 주소':'addr','구매처 TEL':'tel','구매처 FAX':'fax','구입 일시':'date','구매 가액':'price','구매 구분':'kind'};
 function parseCardNote(note){
   const out = {etc:[]};
@@ -2050,7 +2050,7 @@ window.printHistoryCards = (ids)=>{
   const pages = list.map(e=>{
     const n = parseCardNote(e.note);
     const hist = cardHistory(e.id);
-    const etcLines = [...n.etc, ...Array(9).fill('')].slice(0, 9);   // 사진 칸 높이에 맞춰 9줄
+    const etcLines = [...n.etc, ...Array(12).fill('')].slice(0, 12);   // 사진 칸 높이에 맞춰 12줄
     return `<section class="card">
       <table class="t">
         <colgroup><col style="width:17%"><col style="width:30%"><col style="width:17%"><col style="width:36%"></colgroup>
@@ -2058,10 +2058,7 @@ window.printHistoryCards = (ids)=>{
         <tr><td class="c b">${escH(e.id)}</td></tr>
         <tr><td class="k">장 비 명</td><td class="c">${escH(e.type||'')}</td><td class="k">수 량</td><td class="c">1</td></tr>
         <tr><td class="k">MODEL명</td><td class="c">${escH(e.serial||'')}</td><td class="k">규 격</td><td class="c">${escH(e.spec||'')}</td></tr>
-        <tr><td class="k">구 입 처</td><td class="c">${escH(n.vendor||'')}</td><td class="k">구입 일시</td><td class="c">${escH(fmt(e.purchaseDate) ? fmt(e.purchaseDate).replace(/-/g,'.') : (n.date||''))}</td></tr>
-        <tr><td class="k">구매처 주소</td><td class="c" colspan="3">${escH(n.addr||'')}</td></tr>
-        <tr><td class="k">구매처 TEL</td><td class="c">${escH(n.tel||'')}</td><td class="k">구매처 FAX</td><td class="c">${escH(n.fax||'')}</td></tr>
-        <tr><td class="k">구매 가액</td><td class="c">${escH(n.price||'')}</td><td class="k">구매 구분</td><td class="c">${escH(n.kind||'')}</td></tr>
+        <tr><td class="k">구입 일시</td><td class="c" colspan="3">${escH(fmt(e.purchaseDate) ? fmt(e.purchaseDate).replace(/-/g,'.') : (n.date||''))}</td></tr>
         <tr><td class="h" colspan="2">장 비 사 진</td><td class="h" colspan="2">기타 주요 이력</td></tr>
         <tr><td class="photo" colspan="2">${e.photoUrl?`<img src="${escH(e.photoUrl)}" />`:''}</td>
             <td class="etc" colspan="2">${etcLines.map(l=>`<div class="ln">${escH(l)}</div>`).join('')}</td></tr>
@@ -2080,14 +2077,14 @@ window.printHistoryCards = (ids)=>{
     body{font-family:'Malgun Gothic',sans-serif;color:#000;margin:0}
     .card{page-break-after:always} .card:last-child{page-break-after:auto}
     table.t{width:100%;border-collapse:collapse;table-layout:fixed}
-    /* A4 한 장(인쇄 영역 약 275mm)에 들어가게 — 종이 카드 비율: 위 정보 ≈ 27%, 사진·기타 ≈ 37%, 정비 이력 ≈ 33% */
+    /* A4 한 장(인쇄 영역 약 275mm)에 들어가게 — 구매처 4줄을 뺀 만큼 사진·기타 칸을 키웠다 */
     .t td{border:1px solid #000;padding:0 2mm;font-size:12.5px;height:8.6mm;vertical-align:middle;word-break:keep-all}
     .t .k{text-align:center;font-weight:bold;font-size:13px;letter-spacing:1px}
     .t .c{text-align:center} .t .b{font-weight:bold}
     .t .logo{text-align:center} .t .title{text-align:center;font-size:24px;font-weight:bold;letter-spacing:6px}
     .t .h{text-align:center;font-size:16px;font-weight:bold;letter-spacing:4px;height:9mm}
-    .t .photo{height:88mm;text-align:center;padding:2mm}
-    .t .photo img{max-width:100%;max-height:84mm;object-fit:contain}
+    .t .photo{height:114mm;text-align:center;padding:2mm}
+    .t .photo img{max-width:100%;max-height:110mm;object-fit:contain}
     .t .etc{vertical-align:top;padding:1mm 4mm}
     .ln{border-bottom:1px dashed #555;height:8.6mm;line-height:8.6mm;font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
     .hist{margin-top:-1px}
