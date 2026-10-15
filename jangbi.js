@@ -792,6 +792,8 @@ route('#/equipment/:id', ({id})=>{
       sub: m.inspection ? inspSummary(m)
         : [m.partsReplaced?'부품: '+m.partsReplaced:'', m.cost?Number(m.cost).toLocaleString()+'원':''].filter(Boolean).join(' · '),
       extra: [m.note||'', m.nextInspectionDate?`다음점검: ${fmt(m.nextInspectionDate)}`:''].filter(Boolean).join(' | '),
+      // 잘못 넣은 정비 기록은 관리자가 지울 수 있다. 월간점검은 점검 기록이라 여기서 지우지 않는다.
+      maintId: Auth.isAdmin() && m.type!=='월간점검' ? m.id : null,
     });
   });
   Store.byEqId('auditLogs', id)
@@ -890,7 +892,7 @@ route('#/equipment/:id', ({id})=>{
           <div class="rounded-lg border-l-4 ${ev.color} px-3 py-2 text-sm">
             <div class="flex flex-wrap justify-between gap-1">
               <strong>${ev.title}</strong>
-              <span class="text-xs text-slate-400">${fmt(ev.ts)}</span>
+              <span class="text-xs text-slate-400">${fmt(ev.ts)}${ev.maintId?` <button onclick="deleteMaintenance('${ev.maintId}')" title="이 정비 기록 삭제" class="ml-1 text-red-500 hover:text-red-700">🗑</button>`:''}</span>
             </div>
             ${ev.badge?`<span class="badge ${ev.badgeClass||''} mt-0.5">${ev.badge}</span>`:''}
             ${ev.sub?`<div class="text-xs text-slate-500 mt-0.5">${ev.sub}</div>`:''}
@@ -902,6 +904,19 @@ route('#/equipment/:id', ({id})=>{
     </div>`}
   </div>`;
 });
+
+// 정비 기록 삭제 — 지운 내용 전체를 이력 로그(maint_delete)에 남겨 추적·복구할 수 있게 한다.
+// 장비의 다음 점검일은 건드리지 않는다(필요하면 수정 화면에서 고친다).
+window.deleteMaintenance = (mid)=>{
+  if(!Auth.isAdmin()) return;
+  const m = Store.getById('maintenance', mid); if(!m) return;
+  if(m.type==='월간점검'){ alert('월간점검 기록은 여기서 지울 수 없습니다.'); return; }
+  const desc = `${fmt(m.date)} ${m.type}${m.note?' — '+m.note:''}${m.partsReplaced?' (부품: '+m.partsReplaced+')':''}`;
+  if(!confirm(`이 정비 기록을 삭제할까요?\n\n${m.equipmentId} · ${desc}\n\n삭제한 내용은 이력 로그에 남습니다.`)) return;
+  Store.remove('maintenance', mid);
+  Store.log('maint_delete', m.equipmentId, `정비 기록 삭제: ${desc}`, {deleted: m});
+  jbRender();
+};
 
 window.markStatus = (id, status)=>{
   const e = Store.getById('equipment', id); if(!e) return;
