@@ -625,7 +625,6 @@ route('#/equipment', ()=>{
         const lastPeriodic = recs.find(m=>m.type==='정기점검');
         const cycle = periodicCycleMonths(e);
         const due = lastPeriodic ? addMonthsISO(lastPeriodic.date, cycle) : '';
-        const overdue = due && due < todayISO();
         return `<tr>
           <td>${e.id}</td>
           <td>${escH(e.type||'')}${e.spec?' · '+escH(e.spec):''}</td>
@@ -633,7 +632,7 @@ route('#/equipment', ()=>{
           <td>${escH(e.status||'사내')}</td>
           <td class="wrap">${last?`${shortD(last.date)} ${escH(last.type)}${last.note?' — '+escH(last.note):''}`:'-'}</td>
           <td>${lastPeriodic?fmt(lastPeriodic.date):'-'}</td>
-          <td>${due?`${due}${overdue?' ⚠':''}`:'-'} <span class="cyc">(${cycle>=12?cycle/12+'년':cycle+'개월'})</span></td>
+          <td>${due||'-'}</td>
         </tr>`;
       }).join('');
       const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
@@ -647,11 +646,10 @@ route('#/equipment', ()=>{
         th{background:#e8e8e8;font-weight:bold}
         tr:nth-child(even) td{background:#f8f8f8}
         td.wrap{white-space:normal;max-width:90mm}
-        .cyc{color:#777;font-size:9.5px}
       </style></head><body>
         <h2>${title} (${printList.length}건)</h2>
-        <p>출력일: ${todayISO()} · 점검예정일 = 최근 정기점검 + 주기 (크레인 2년, 체인·레버블록·오일 잭 1년, 그 밖의 장비 6개월) · ⚠ 지남</p>
-        <table><thead><tr><th>장비관리번호</th><th>장비명</th><th>카테고리</th><th>상태</th><th>정비 내역 (최근)</th><th>최근 정기점검</th><th>점검예정일</th></tr></thead>
+        <p>출력일: ${todayISO()}</p>
+        <table><thead><tr><th>장비관리번호</th><th>장비명</th><th>카테고리</th><th>상태</th><th>정비 내역 (최근)</th><th>최근점검</th><th>점검예정일</th></tr></thead>
         <tbody>${rows}</tbody></table>
       </body></html>`;
       const w = window.open('','_blank','width=860,height=1200');
