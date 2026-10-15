@@ -705,6 +705,7 @@ route('#/equipment', ()=>{
       <button onclick="bulkCert('add')" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg">+ 인증 추가</button>
       <button onclick="bulkCert('remove')" class="bg-white border border-indigo-300 text-indigo-700 px-3 py-1.5 rounded-lg">− 인증 제거</button>
       <button onclick="bulkCert('clear')" class="bg-white border px-3 py-1.5 rounded-lg">미인증으로</button>
+      <a href="#/maintenance/bulk" class="bg-emerald-600 text-white px-3 py-1.5 rounded-lg">🛠 정비 기록 일괄 추가</a>
       <button onclick="clearEqSel()" class="text-xs text-slate-500 underline ml-auto">선택 해제</button>
       <div class="basis-full flex flex-wrap gap-2 items-center pt-2 border-t border-indigo-200">
         <span class="font-semibold">관리책임자</span>
@@ -1437,6 +1438,71 @@ window.doReturn = (id)=>{
 };
 
 /* ── 정비 이력 입력 ── */
+/* ── 정비 기록 일괄 추가 ──
+   장비 목록에서 체크한 장비(_eqSel)에 같은 정비 기록을 한 번에 넣는다 — 반기·1년·2년 정기점검, 1년 검교정 등.
+   장비마다 정비 입력 화면과 같은 기록·이력·다음 점검일 갱신을 남긴다. 날짜는 오늘까지만. */
+route('#/maintenance/bulk', ()=>{
+  if(!Auth.isAdmin()) return `<div class="p-6">관리자만</div>`;
+  const list = [..._eqSel].map(id=>Store.getById('equipment', id)).filter(Boolean).sort((a,b)=>a.id.localeCompare(b.id));
+  if(!list.length) return `<div class="p-6">선택한 장비가 없습니다. <a href="#/equipment" class="text-blue-600">장비 목록</a>에서 장비를 체크한 뒤 다시 오세요.</div>`;
+  setTimeout(()=>{
+    const f = document.getElementById('bm-form'); if(!f) return;
+    const dateIn = f.querySelector('[name=date]'), nextIn = f.querySelector('[name=nextInspectionDate]'), preset = f.querySelector('[name=preset]');
+    const apply = ()=>{ const n = Number(preset.value); if(n && dateIn.value) nextIn.value = addMonthsISO(dateIn.value, n); };
+    preset.onchange = apply; dateIn.addEventListener('change', apply);
+    nextIn.addEventListener('input', ()=>{ preset.value = ''; });
+    document.querySelectorAll('[data-bm-remove]').forEach(b=>b.onclick = ()=>{ _eqSel.delete(b.dataset.bmRemove); jbRender(); });
+    f.onsubmit = ev=>{
+      ev.preventDefault();
+      const d = Object.fromEntries(new FormData(f).entries());
+      if(!d.date || d.date > todayISO()){ alert('날짜는 오늘까지만 고를 수 있습니다.'); return; }
+      if(d.nextInspectionDate && d.nextInspectionDate <= d.date){ alert('다음 점검 예정일은 정비 날짜 이후여야 합니다.'); return; }
+      if(!confirm(`장비 ${list.length}대에 "${d.type}" 기록을 ${d.date} 날짜로 추가할까요?${d.nextInspectionDate?`\n다음 점검일 → ${d.nextInspectionDate}`:''}`)) return;
+      for(const e of list){
+        Store.add('maintenance', {equipmentId:e.id, date:d.date, type:d.type, partsReplaced:'', cost:0,
+          note:d.note.trim(), nextInspectionDate:d.nextInspectionDate||'', performerId:Auth.current.employeeId, bulk:true});
+        Store.log('maintenance', e.id, `${d.type}${d.note.trim()?' — '+d.note.trim():''} (일괄)`, {maintenanceType:d.type});
+        if(d.nextInspectionDate){
+          Store.update('equipment', e.id, {nextInspectionDate:d.nextInspectionDate});
+          Store.log('status_change', e.id, `다음 점검일 갱신 → ${d.nextInspectionDate}`, {nextInspectionDate:d.nextInspectionDate});
+        }
+      }
+      alert(`${list.length}대에 정비 기록을 추가했습니다.`);
+      _eqSel.clear();
+      jbNavigate('#/equipment');
+    };
+  });
+  return `
+  <div class="max-w-3xl">
+    <a href="#/equipment" class="text-sm text-blue-600">← 장비 목록</a>
+    <h1 class="text-2xl font-bold mt-1 mb-1">🛠 정비 기록 일괄 추가</h1>
+    <p class="text-sm text-slate-500 mb-3">체크한 장비 ${list.length}대에 같은 정비 기록을 한 번에 넣습니다 (정기점검·검교정 등). 장비마다 정비 이력과 다음 점검일이 갱신됩니다.</p>
+    <form id="bm-form" class="bg-white rounded-xl shadow-sm p-4 grid grid-cols-2 gap-3 mb-3">
+      <label class="block">종류<select name="type" class="w-full border rounded px-3 py-2 mt-1">${['정기점검','교정','수리','일상점검'].map(t=>`<option>${t}</option>`).join('')}</select></label>
+      <label class="block">날짜<input type="date" name="date" value="${todayISO()}" max="${todayISO()}" required class="w-full border rounded px-3 py-2 mt-1" /></label>
+      <div class="block col-span-2">다음 점검 예정일 <span class="text-xs text-slate-400">(날짜 기준, 비워 두면 그대로)</span>
+        <div class="flex gap-2 mt-1">
+          <select name="preset" class="border rounded px-3 py-2">
+            <option value="">직접 지정 / 안 바꿈</option><option value="6">6개월 후</option><option value="12">1년 후</option><option value="24">2년 후</option>
+          </select>
+          <input type="date" name="nextInspectionDate" class="flex-1 border rounded px-3 py-2" />
+        </div>
+      </div>
+      <label class="block col-span-2">내용 <span class="text-xs text-slate-400">(이력카드 정비 내역에 함께 표시)</span><input name="note" class="w-full border rounded px-3 py-2 mt-1" placeholder="예: 반기 정기점검, 용접기 검교정(큐앤큐)" /></label>
+      <div class="col-span-2 text-right"><button class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-semibold">${list.length}대에 추가</button></div>
+    </form>
+    <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div class="px-4 py-2 bg-slate-50 text-xs font-semibold text-slate-500">대상 장비 ${list.length}대</div>
+      ${list.map(e=>`<div class="flex items-center gap-3 px-4 py-2 border-t text-sm">
+        <span class="font-semibold flex-1">${escH(e.type||'')}</span>
+        <span class="text-xs text-slate-500 w-24">${e.id}</span>
+        <span class="text-xs text-slate-400 w-32">다음점검 ${fmt(e.nextInspectionDate)||'-'}</span>
+        <button type="button" data-bm-remove="${e.id}" class="text-xs text-red-500">빼기</button>
+      </div>`).join('')}
+    </div>
+  </div>`;
+});
+
 route('#/maintenance', ()=>{
   if(!Auth.isAdmin()) return `<div class="p-6">관리자만</div>`;
   const params = new URLSearchParams(_jbPath.split('?')[1]||'');
