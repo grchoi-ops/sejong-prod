@@ -70,6 +70,7 @@ function drApplyRolePermissions() {
   if (carryBtn) carryBtn.disabled = !!viewer;
   const pullBtn = document.getElementById('dr-pull-btn');
   if (pullBtn) pullBtn.disabled = !!viewer;
+  root.querySelectorAll('.dr-auto-btn').forEach(b => { b.disabled = !!viewer; });
   const saveBtn = document.getElementById('dr-save-btn');
   if (saveBtn) saveBtn.style.display = viewer ? 'none' : '';
   drSetCellsEditable(!viewer);
@@ -101,6 +102,8 @@ function drBuildShell() {
         <button class="btn btn-ghost btn-sm" id="dr-today-btn">오늘</button>
         <button class="btn btn-ghost btn-sm" id="dr-pull-btn" title="전일 보고서의 익일 계획→금일 진행상황, 중량물 취급계획을 가져옵니다">전일 계획 불러오기</button>
         <button class="btn btn-ghost btn-sm" id="dr-carry-btn" title="금일 진행상황을 익일 계획으로 복사">익일 계획으로 복사</button>
+        <button class="btn btn-ghost btn-sm dr-auto-btn" id="dr-fill-btn" title="④ 일일 입력(사람별 프로젝트·작업 내용)으로 이 날짜의 금일 진행상황·익일 계획을 채웁니다">⚡ 일일 입력으로 채우기</button>
+        <button class="btn btn-ghost btn-sm dr-auto-btn" id="dr-bulk-btn" title="보고서가 밀린 날짜들을 ④ 일일 입력 기준으로 한꺼번에 작성합니다">⚡ 밀린 보고서 몰아 작성</button>
         <div style="margin-left:auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
           <div class="dr-fit" id="dr-fit"><span id="dr-fit-lab">1장 여유</span><span class="dr-fitbar"><i id="dr-fit-fill"></i></span></div>
           <span class="dr-save-status" id="dr-save-status"></span>
@@ -159,6 +162,26 @@ function drBuildShell() {
     </aside>
 
     <div class="dr-toast" id="dr-toast"><span id="dr-toast-msg"></span><button id="dr-toast-act" hidden></button></div>
+
+    <div class="dr-modal no-print" id="dr-bulk-modal" hidden>
+      <div class="dr-modal-box">
+        <div class="dr-modal-head">
+          <strong>밀린 보고서 몰아 작성</strong>
+          <button type="button" id="dr-bulk-close" title="닫기">×</button>
+        </div>
+        <p class="dr-modal-desc">보고서가 <b>없는</b> 날짜만 ④ 일일 입력 내용으로 채웁니다. 이미 작성한 보고서는 건드리지 않습니다.<br>
+          금일 진행상황 = 그날 일일 입력 · 익일 계획 = 다음 근무일 일일 입력 (없으면 금일과 동일) · 중량물·진척도는 비워 둡니다.</p>
+        <div class="dr-modal-range">
+          <input type="date" id="dr-bulk-from"> <span>~</span> <input type="date" id="dr-bulk-to">
+        </div>
+        <div class="dr-modal-list" id="dr-bulk-list"></div>
+        <div class="dr-modal-foot">
+          <span id="dr-bulk-count"></span>
+          <button type="button" class="btn btn-ghost btn-sm" id="dr-bulk-cancel">취소</button>
+          <button type="button" class="btn btn-primary btn-sm" id="dr-bulk-run">작성하고 서버 저장</button>
+        </div>
+      </div>
+    </div>
   `;
 
   DR_SECTIONS.forEach(sec => drEnsureMinRows(sec));
@@ -225,6 +248,14 @@ function drBuildShell() {
   document.getElementById('dr-today-btn').addEventListener('click', () => drLoad(drTodayStr()));
   document.getElementById('dr-pull-btn').addEventListener('click', drPullFromPrevDay);
   document.getElementById('dr-carry-btn').addEventListener('click', drCarryToNext);
+  document.getElementById('dr-fill-btn').addEventListener('click', drFillFromInput);
+  document.getElementById('dr-bulk-btn').addEventListener('click', drOpenBulkModal);
+  document.getElementById('dr-bulk-close').addEventListener('click', drCloseBulkModal);
+  document.getElementById('dr-bulk-cancel').addEventListener('click', drCloseBulkModal);
+  document.getElementById('dr-bulk-from').addEventListener('change', drRenderBulkList);
+  document.getElementById('dr-bulk-to').addEventListener('change', drRenderBulkList);
+  document.getElementById('dr-bulk-run').addEventListener('click', drRunBulk);
+  document.getElementById('dr-bulk-modal').addEventListener('click', e => { if (e.target.id === 'dr-bulk-modal') drCloseBulkModal(); });
   document.getElementById('dr-print-btn').addEventListener('click', drPrint);
   document.getElementById('dr-hist-btn').addEventListener('click', () => {
     document.getElementById('dr-drawer').classList.add('open');
@@ -547,6 +578,180 @@ function drCarryToNext() {
     drWriteSection('next', before);
     drScheduleSave();
   });
+}
+
+/* ══════════════════════════════════════════
+   ④ 일일 입력 → 보고서 자동 작성
+   원칙은 매일 직접 쓰는 것이지만, 밀렸을 때 일일 입력을 보고 몰아 쓰는
+   수고를 덜기 위한 보조 기능이다. 버튼을 눌렀을 때만 동작한다.
+   - 금일 진행상황: 그날 출근(반차 포함)한 사람을 프로젝트별로 묶고,
+     같은 작업 내용끼리 "작업 내용 : 이름, 이름" 한 줄로 적는다.
+   - 익일 계획: 다음 근무일(일주일 안)의 일일 입력으로 같은 방식으로 만든다.
+     없으면 금일 진행상황을 그대로 쓴다.
+   - 중량물 취급계획·진척도·비고는 일일 입력에 없는 정보라 비워 둔다.
+   ══════════════════════════════════════════ */
+const DR_DIV_ORDER = ['제관', '용접', '보조', '가공', '구동', '공사', '관리'];
+
+// "삼성전기 (배관 개선 건)" → 거래처 "삼성전기" + 세부 "배관 개선 건"
+function drSplitClient(name) {
+  const s = String(name || '').trim();
+  const m = s.match(/^(.*?)\s*\(([^()]*)\)\s*$/);
+  return m && m[1] ? { base: m[1].trim(), sub: m[2].trim() } : { base: s, sub: '' };
+}
+
+function drInputRows(date) {
+  const day = (state.dailyData || {})[date];
+  if (!day || !day.emp) return [];
+  const rank = e => { const i = DR_DIV_ORDER.indexOf(e.div); return i === -1 ? 99 : i; };
+  const emps = [...(state.employees || [])].sort((a, b) => (rank(a) - rank(b)) || (a.id - b.id));
+  const groups = new Map(); // 거래처 → { n, lines: Map(작업내용 → [이름]) }
+
+  emps.forEach(emp => {
+    const ed = day.emp[emp.id];
+    if (!ed || ed.status === '휴무' || ed.status === '연차') return;
+    const work = String(ed.work || '').trim();
+    const proj = ed.projId !== '' && ed.projId != null
+      ? (state.projects || []).find(p => String(p.id) === String(ed.projId)) : null;
+    if (!proj && !work) return; // 프로젝트도 작업 내용도 없으면 적을 게 없다
+    const { base, sub } = proj ? drSplitClient(proj.client || proj.code) : { base: '기타', sub: '' };
+    const label = work || sub || (ed.onTrip ? '출장' : '');
+    if (!groups.has(base)) groups.set(base, { n: 0, lines: new Map() });
+    const g = groups.get(base);
+    g.n++;
+    if (!g.lines.has(label)) g.lines.set(label, []);
+    g.lines.get(label).push(emp.name);
+  });
+
+  const rows = [...groups.entries()]
+    .sort((a, b) => b[1].n - a[1].n)
+    .map(([base, g]) => ({
+      proj: base,
+      work: [...g.lines.entries()]
+        .sort((a, b) => b[1].length - a[1].length)
+        .map(([label, names]) => (label ? `${label} : ` : '') + names.join(', '))
+        .join('\n'),
+      pct: '', note: ''
+    }));
+  rows.people = [...groups.values()].reduce((s, g) => s + g.n, 0); // 배열 속성이라 저장(JSON)에는 안 들어간다
+  return rows;
+}
+
+// 다음 근무일(일주일 안에서 일일 입력이 있는 첫 날)의 내용, 없으면 금일과 동일
+function drNextPlanRows(date, todayRows) {
+  for (let i = 1; i <= 7; i++) {
+    const rows = drInputRows(drShift(date, i));
+    if (rows.length) return { rows, from: drShift(date, i) };
+  }
+  return { rows: todayRows.map(r => ({ ...r })), from: null };
+}
+
+// "⚡ 일일 입력으로 채우기" — 지금 보고 있는 날짜 한 건
+function drFillFromInput() {
+  if (drIsViewer()) return;
+  const today = drInputRows(_drDate);
+  if (!today.length) { drToast('이 날짜의 ④ 일일 입력에 출근·작업 내용이 없습니다'); return; }
+  const hasContent = ['today', 'next'].some(s => drReadSection(s).some(drNotEmpty));
+  if (hasContent && !confirm('지금 적혀 있는 금일 진행상황·익일 계획을 ④ 일일 입력 내용으로 바꿉니다.\n(중량물 취급계획은 그대로 둡니다)\n계속할까요?')) return;
+
+  const before = { today: drReadSection('today'), next: drReadSection('next') };
+  const next = drNextPlanRows(_drDate, today);
+  drWriteSection('today', today);
+  drWriteSection('next', next.rows);
+  drScheduleSave();
+  drToast(`일일 입력으로 채웠습니다${next.from ? '' : ' (익일 입력이 없어 익일 계획은 금일과 같게)'} — 확인 후 서버 저장하세요`, '되돌리기', () => {
+    drWriteSection('today', before.today);
+    drWriteSection('next', before.next);
+    drScheduleSave();
+  });
+}
+
+/* ── 밀린 날짜 몰아 작성 ── */
+function drOpenBulkModal() {
+  if (drIsViewer()) return;
+  drFlushPending();
+  const today = drTodayStr();
+  const written = Object.keys(state.dailyReports || {}).filter(d => d <= today).sort();
+  const last = written[written.length - 1];
+  document.getElementById('dr-bulk-from').value = last ? drShift(last, 1) : drShift(today, -13);
+  document.getElementById('dr-bulk-to').value = today;
+  document.getElementById('dr-bulk-modal').hidden = false;
+  drRenderBulkList();
+}
+
+function drCloseBulkModal() { document.getElementById('dr-bulk-modal').hidden = true; }
+
+function drRenderBulkList() {
+  const from = document.getElementById('dr-bulk-from').value;
+  const to = document.getElementById('dr-bulk-to').value;
+  const list = document.getElementById('dr-bulk-list');
+  const items = [];
+  let skipped = 0;
+  if (from && to && from <= to) {
+    for (let d = from, guard = 0; d <= to && guard < 400; d = drShift(d, 1), guard++) {
+      const rows = drInputRows(d);
+      if (!rows.length) continue;
+      if ((state.dailyReports || {})[d]) { skipped++; continue; }
+      items.push({ d, n: rows.people, projs: rows.map(r => r.proj).join(', ') });
+    }
+  }
+  if (!items.length) {
+    list.innerHTML = `<div class="dr-empty">${from && to && from <= to
+      ? '이 기간에 새로 작성할 날짜가 없습니다.' + (skipped ? `<br>(${skipped}일은 이미 작성됨)` : '')
+      : '기간을 올바르게 고르세요.'}</div>`;
+  } else {
+    list.innerHTML = items.map(it => {
+      const dow = drParse(it.d).getDay();
+      const off = dow === 0 || dow === 6 || (typeof KR_HOLIDAYS !== 'undefined' && KR_HOLIDAYS.has(it.d));
+      return `<label class="dr-bulk-item${off ? ' off' : ''}">
+        <input type="checkbox" value="${it.d}" checked>
+        <span class="dr-bulk-d">${it.d.slice(5).replace('-', '. ')} (${DAYS_KO[dow]})</span>
+        <span class="dr-bulk-n">${it.n}명</span>
+        <span class="dr-bulk-p">${drEsc(it.projs)}</span>
+      </label>`;
+    }).join('') + (skipped ? `<div class="dr-bulk-skip">이미 작성한 ${skipped}일은 목록에서 뺐습니다.</div>` : '');
+  }
+  list.querySelectorAll('input[type=checkbox]').forEach(c => c.addEventListener('change', drUpdateBulkCount));
+  drUpdateBulkCount();
+}
+
+function drUpdateBulkCount() {
+  const n = document.querySelectorAll('#dr-bulk-list input[type=checkbox]:checked').length;
+  document.getElementById('dr-bulk-count').textContent = n ? `${n}일 선택` : '';
+  document.getElementById('dr-bulk-run').disabled = !n;
+}
+
+async function drRunBulk() {
+  if (drIsViewer()) return;
+  drFlushPending();
+  const dates = [...document.querySelectorAll('#dr-bulk-list input[type=checkbox]:checked')].map(c => c.value)
+    .filter(d => !(state.dailyReports || {})[d]); // 그 사이에 누가 작성했으면 건너뛴다
+  if (!dates.length) { drCloseBulkModal(); return; }
+  if (!confirm(`${dates.length}일치 보고서를 일일 입력 기준으로 작성하고 서버에 저장합니다.\n(${dates[0]} ~ ${dates[dates.length - 1]})\n계속할까요?`)) return;
+
+  if (!state.dailyReports) state.dailyReports = {};
+  const writer = localStorage.getItem('sejong_user_name') || '';
+  dates.forEach(d => {
+    const today = drInputRows(d);
+    state.dailyReports[d] = {
+      dept: '생산부', writer, updatedAt: Date.now(),
+      today, heavy: [], next: drNextPlanRows(d, today).rows
+    };
+  });
+  saveState();
+  drCloseBulkModal();
+  drLoad(dates[0], { discard: true });
+  drRenderHistoryList();
+
+  const btn = document.getElementById('dr-bulk-btn');
+  if (btn) btn.disabled = true;
+  try {
+    await drPushToServer();
+    drToast(`${dates.length}일치 보고서를 작성·저장했습니다 — 📁 기록에서 하루씩 확인하세요`);
+  } catch (e) {
+    drToast('서버 저장 실패 (로컬엔 저장됨) — ✓ 저장 버튼으로 다시 시도하세요');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 /* ══════════════════════════════════════════
@@ -894,6 +1099,28 @@ function drInjectStyle() {
     .dr-readonly .dr-addrow { display:none; }
     .dr-readonly #dr-carry-btn { display:none; }
     .dr-readonly #dr-pull-btn { display:none; }
+    .dr-readonly .dr-auto-btn { display:none; }
+
+    /* 밀린 보고서 몰아 작성 */
+    .dr-modal { position:fixed; inset:0; z-index:400; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; padding:16px; }
+    .dr-modal[hidden] { display:none; }
+    .dr-modal-box { background:var(--surface); border:1px solid var(--border); border-radius:6px; width:520px; max-width:100%; max-height:86vh; display:flex; flex-direction:column; box-shadow:0 8px 30px rgba(0,0,0,.45); color:var(--text); }
+    .dr-modal-head { padding:14px 16px 10px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); font-size:14px; }
+    .dr-modal-head button { background:none; border:0; font-size:18px; cursor:pointer; color:var(--text2); line-height:1; }
+    .dr-modal-desc { margin:10px 16px 4px; font-size:12px; color:var(--text2); line-height:1.6; }
+    .dr-modal-range { display:flex; align-items:center; gap:8px; margin:8px 16px; font-size:13px; color:var(--text2); }
+    .dr-modal-range input { padding:5px 7px; font-size:12.5px; }
+    .dr-modal-list { flex:1; overflow:auto; margin:4px 12px; border-top:1px solid var(--border); padding-top:6px; min-height:80px; }
+    .dr-bulk-item { display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:3px; cursor:pointer; font-size:13px; }
+    .dr-bulk-item:hover { background:var(--surface2); }
+    .dr-bulk-item input { width:15px; height:15px; accent-color:var(--accent); flex-shrink:0; }
+    .dr-bulk-d { font-weight:600; white-space:nowrap; }
+    .dr-bulk-item.off .dr-bulk-d { color:var(--accent4); }
+    .dr-bulk-n { color:var(--text3); font-size:12px; white-space:nowrap; }
+    .dr-bulk-p { color:var(--text2); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+    .dr-bulk-skip { font-size:11.5px; color:var(--text3); padding:8px; }
+    .dr-modal-foot { padding:10px 16px; border-top:1px solid var(--border); display:flex; align-items:center; gap:8px; }
+    .dr-modal-foot span { margin-right:auto; font-size:12px; color:var(--text2); }
     .dr-readonly .dr-item-del { display:none; }
     .dr-readonly #dr-bulk-delete { display:none; }
 
